@@ -1,0 +1,4 @@
+(executable
+ (public_name copper_trace)
+ (name main)
+ (libraries cmdliner))
