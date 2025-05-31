@@ -103,9 +103,9 @@ let copper_trace_cmd =
   let info = Cmd.info "copper_trace" ~doc in
   let term = Term.(const (fun length width thickness temperature ->
     let resistance = calculate_resistance length width thickness temperature in
-    Printf.printf "Copper trace resistance: %.6e Ohms\n" resistance;
-    Printf.printf "Length: %.3e m, Width: %.3e m, Thickness: %.3e m, Temperature: %.1f°C\n" 
-      length width thickness temperature
+    Printf.printf "Copper trace resistance: %.6f Ohms\n" resistance;
+    Printf.printf "Length: %.3f mm, Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
+      (length *. 1000.0) (width *. 1000.0) (thickness *. 1000.0) temperature
   ) $ length_arg $ width_arg $ thickness_arg $ temperature_arg) in
   Cmd.v info term
 
