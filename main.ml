@@ -9,6 +9,9 @@ let oz_per_sqm_to_meters oz_per_sqm =
   let thickness_kg_per_sqm = oz_per_sqm *. oz_to_kg in
   thickness_kg_per_sqm /. copper_density
 
+let mil_to_meters mil =
+  mil *. 25.4e-6
+
 let parse_thickness s =
   let len = String.length s in
   if len = 0 then
@@ -43,6 +46,33 @@ let parse_thickness s =
 
 let thickness_converter = Arg.conv (parse_thickness, fun ppf t -> Format.fprintf ppf "%.6e" t)
 
+let parse_width s =
+  let len = String.length s in
+  if len = 0 then
+    Error (`Msg "Empty width value")
+  else if String.ends_with ~suffix:"mm" s then
+    let value_str = String.sub s 0 (len - 2) in
+    (try
+       let value = Float.of_string value_str in
+       Ok (value *. 1e-3)
+     with
+     | Failure _ -> Error (`Msg "Invalid number format"))
+  else if String.ends_with ~suffix:"mil" s then
+    let value_str = String.sub s 0 (len - 3) in
+    (try
+       let value = Float.of_string value_str in
+       Ok (mil_to_meters value)
+     with
+     | Failure _ -> Error (`Msg "Invalid number format"))
+  else
+    try
+      let value = Float.of_string s in
+      Ok (value *. 1e-3)
+    with
+    | Failure _ -> Error (`Msg "Invalid width format. Use: <value>mm, <value>mil, or <value> (mm default)")
+
+let width_converter = Arg.conv (parse_width, fun ppf w -> Format.fprintf ppf "%.6e" w)
+
 let calculate_resistivity_at_temp temp_celsius =
   copper_resistivity_20c *. (1.0 +. temperature_coefficient *. (temp_celsius -. 20.0))
 
@@ -57,8 +87,8 @@ let length_arg =
   Arg.(required & pos 0 (some float) None & info [] ~docv:"LENGTH" ~doc)
 
 let width_arg =
-  let doc = "Width of the copper trace in meters" in
-  Arg.(value & opt float 1e-3 & info ["w"; "width"] ~docv:"WIDTH" ~doc)
+  let doc = "Width of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default). Default: 1mm" in
+  Arg.(value & opt width_converter 1e-3 & info ["w"; "width"] ~docv:"WIDTH" ~doc)
 
 let thickness_arg =
   let doc = "Thickness of the copper trace. Formats: <value>mm, <value>um, <value>oz, or <value> (oz default). Default: 1oz" in
