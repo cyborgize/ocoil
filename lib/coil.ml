@@ -73,14 +73,14 @@ let generate_square_loop size turn_number pitch is_inner =
   let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
   [
-    Line { start = { x = current_half_size; y = -.current_half_size }; 
+    Line { start = { x = current_half_size; y = op (-.current_half_size) pitch }; 
            end_point = { x = current_half_size; y = current_half_size } };
     Line { start = { x = current_half_size; y = current_half_size }; 
            end_point = { x = -.current_half_size; y = current_half_size } };
     Line { start = { x = -.current_half_size; y = current_half_size }; 
            end_point = { x = -.current_half_size; y = -.current_half_size } };
     Line { start = { x = -.current_half_size; y = -.current_half_size }; 
-           end_point = { x = next_half_size; y = -.next_half_size } };
+           end_point = { x = next_half_size; y = -.current_half_size } };
   ]
 
 let generate_rectangular_loop width height turn_number pitch is_inner =
