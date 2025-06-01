@@ -326,8 +326,8 @@ let generate_spiral_path shape pitch turns =
   
   points
 
-let generate_kicad_primitives shape points track_width pitch turns =
-  let mm_to_kicad p = { x = p.x *. 1000.0; y = p.y *. 1000.0 } in
+let generate_kicad_primitives shape points track_width pitch turns ?(offset = { x = 0.0; y = 0.0 }) () =
+  let mm_to_kicad p = { x = (p.x *. 1000.0) -. offset.x; y = (p.y *. 1000.0) -. offset.y } in
   let width_mm = track_width *. 1000.0 in
   
   match shape with
@@ -346,9 +346,9 @@ let generate_kicad_primitives shape points track_width pitch turns =
       let end_radius = (diameter *. 0.5 +. pitch *. end_angle /. (2.0 *. Float.pi)) *. 1000.0 in
       let mid_radius = (diameter *. 0.5 +. pitch *. mid_angle /. (2.0 *. Float.pi)) *. 1000.0 in
       
-      let start_point = { x = start_radius *. cos start_angle; y = start_radius *. sin start_angle } in
-      let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
-      let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
+      let start_point = { x = (start_radius *. cos start_angle) -. offset.x; y = (start_radius *. sin start_angle) -. offset.y } in
+      let end_point = { x = (end_radius *. cos end_angle) -. offset.x; y = (end_radius *. sin end_angle) -. offset.y } in
+      let mid_point = { x = (mid_radius *. cos mid_angle) -. offset.x; y = (mid_radius *. sin mid_angle) -. offset.y } in
       
       let primitive = Printf.sprintf "            (gr_arc (start %.3f %.3f) (mid %.3f %.3f) (end %.3f %.3f) (width %.3f))"
         start_point.x start_point.y mid_point.x mid_point.y end_point.x end_point.y width_mm in
@@ -433,7 +433,6 @@ let kicad_cmd =
     in
     
     let points = generate_spiral_path shape pitch turns in
-    let primitives = generate_kicad_primitives shape points width pitch turns in
     
     (* Calculate pad positions - outer pad at start, inner pad at end *)
     let start_point = points.(0) in
@@ -459,13 +458,17 @@ let kicad_cmd =
     let outer_pad_x = start_point.x *. 1000.0 in
     let outer_pad_y = start_point.y *. 1000.0 in
     
+    (* Generate primitives with coordinates relative to pad position *)
+    let pad_offset = { x = outer_pad_x; y = outer_pad_y } in
+    let relative_primitives = generate_kicad_primitives shape points width pitch turns ~offset:pad_offset () in
+    
     Printf.fprintf output_channel "    (pad \"1\" smd custom\n";
     Printf.fprintf output_channel "        (at %.3f %.3f)\n" outer_pad_x outer_pad_y;
     Printf.fprintf output_channel "        (size %.3f %.3f)\n" pad_size pad_size;
     Printf.fprintf output_channel "        (layers \"F.Cu\")\n";
     Printf.fprintf output_channel "        (options (clearance outline) (anchor circle))\n";
     Printf.fprintf output_channel "        (primitives\n";
-    List.iter (fun primitive -> Printf.fprintf output_channel "%s\n" primitive) primitives;
+    List.iter (fun primitive -> Printf.fprintf output_channel "%s\n" primitive) relative_primitives;
     Printf.fprintf output_channel "        )\n";
     Printf.fprintf output_channel "    )\n";
     
