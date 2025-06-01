@@ -1,10 +1,10 @@
 open Coil
 
-let generate_kicad_primitives shape track_width pitch turns ?(offset = { x = 0.0; y = 0.0 }) () =
+let generate_kicad_primitives shape track_width pitch turns is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
   let mm_to_kicad p = { x = (p.x *. 1000.0) -. offset.x; y = (p.y *. 1000.0) -. offset.y } in
   let width_mm = track_width *. 1000.0 in
   
-  let segments = generate_spiral_segments shape pitch turns in
+  let segments = generate_spiral_segments shape pitch turns is_inner in
   
   List.fold_left (fun acc segment ->
     let primitive = match segment with
@@ -23,8 +23,8 @@ let generate_kicad_primitives shape track_width pitch turns ?(offset = { x = 0.0
     primitive :: acc
   ) [] segments |> List.rev
 
-let generate_footprint output_channel shape width pitch turns =
-  let segments = generate_spiral_segments shape pitch turns in
+let generate_footprint output_channel shape width pitch turns is_inner =
+  let segments = generate_spiral_segments shape pitch turns is_inner in
   let pad_size = width *. 1000.0 in
   
   (* Calculate pad positions from first and last segments *)
@@ -48,7 +48,7 @@ let generate_footprint output_channel shape width pitch turns =
   
   (* Generate primitives with coordinates relative to pad position *)
   let pad_offset = { x = outer_pad_x; y = outer_pad_y } in
-  let relative_primitives = generate_kicad_primitives shape width pitch turns ~offset:pad_offset () in
+  let relative_primitives = generate_kicad_primitives shape width pitch turns is_inner ~offset:pad_offset () in
   
   Printf.fprintf output_channel "    (pad \"1\" smd custom\n";
   Printf.fprintf output_channel "        (at %.3f %.3f)\n" outer_pad_x outer_pad_y;

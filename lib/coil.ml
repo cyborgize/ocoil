@@ -39,9 +39,10 @@ let calculate_spiral_length shape pitch turns is_inner =
   in
   avg_circumference *. turns
 
-let generate_round_loop radius turn_number pitch =
+let generate_round_loop radius turn_number pitch is_inner =
+  let op = if is_inner then (+.) else (-.) in
   let angle_offset = Float.pi *. 2.0 *. turn_number in
-  let expanded_radius = radius +. pitch *. turn_number in
+  let expanded_radius = op radius (pitch *. turn_number) in
   let num_arcs = 8 in
   let angle_step = Float.pi *. 2.0 /. float_of_int num_arcs in
   
@@ -57,8 +58,9 @@ let generate_round_loop radius turn_number pitch =
     Arc { start = start_point; mid = mid_point; end_point; radius = expanded_radius }
   )
 
-let generate_square_loop size turn_number pitch =
-  let expanded_half_size = size *. 0.5 +. pitch *. turn_number in
+let generate_square_loop size turn_number pitch is_inner =
+  let op = if is_inner then (+.) else (-.) in
+  let expanded_half_size = op (size *. 0.5) (pitch *. turn_number) in
   [
     Line { start = { x = expanded_half_size; y = -.expanded_half_size }; 
            end_point = { x = expanded_half_size; y = expanded_half_size } };
@@ -70,9 +72,10 @@ let generate_square_loop size turn_number pitch =
            end_point = { x = expanded_half_size; y = -.expanded_half_size } };
   ]
 
-let generate_rectangular_loop width height turn_number pitch =
-  let expanded_half_w = width *. 0.5 +. pitch *. turn_number in
-  let expanded_half_h = height *. 0.5 +. pitch *. turn_number in
+let generate_rectangular_loop width height turn_number pitch is_inner =
+  let op = if is_inner then (+.) else (-.) in
+  let expanded_half_w = op (width *. 0.5) (pitch *. turn_number) in
+  let expanded_half_h = op (height *. 0.5) (pitch *. turn_number) in
   [
     Line { start = { x = expanded_half_w; y = -.expanded_half_h }; 
            end_point = { x = expanded_half_w; y = expanded_half_h } };
@@ -84,9 +87,10 @@ let generate_rectangular_loop width height turn_number pitch =
            end_point = { x = expanded_half_w; y = -.expanded_half_h } };
   ]
 
-let generate_oval_loop width height turn_number pitch =
-  let expanded_half_w = width *. 0.5 +. pitch *. turn_number in
-  let expanded_half_h = height *. 0.5 +. pitch *. turn_number in
+let generate_oval_loop width height turn_number pitch is_inner =
+  let op = if is_inner then (+.) else (-.) in
+  let expanded_half_w = op (width *. 0.5) (pitch *. turn_number) in
+  let expanded_half_h = op (height *. 0.5) (pitch *. turn_number) in
   let min_dim = min expanded_half_w expanded_half_h in
   let is_horizontal = width >= height in
   
@@ -123,7 +127,7 @@ let generate_oval_loop width height turn_number pitch =
             radius = min_dim };
     ]
 
-let generate_spiral_segments shape pitch turns =
+let generate_spiral_segments shape pitch turns is_inner =
   let loop_generator = match shape with
     | Round { diameter } -> generate_round_loop (diameter *. 0.5)
     | Square { size } -> generate_square_loop size
@@ -133,11 +137,11 @@ let generate_spiral_segments shape pitch turns =
   
   let num_turns = int_of_float (Float.ceil turns) in
   List.init num_turns (fun i -> 
-    loop_generator (float_of_int i) pitch
+    loop_generator (float_of_int i) pitch is_inner
   ) |> List.concat
 
-let generate_spiral_path shape pitch turns =
-  let all_segments = generate_spiral_segments shape pitch turns in
+let generate_spiral_path shape pitch turns is_inner =
+  let all_segments = generate_spiral_segments shape pitch turns is_inner in
   
   (* Extract points from segments for compatibility with existing KiCad code *)
   let extract_points segments =
