@@ -88,16 +88,15 @@ let generate_rectangular_loop width height turn_number pitch is_inner =
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
   let next_half_w = op (width *. 0.5) (pitch *. (turn_number +. 1.0)) in
-  let next_half_h = op (height *. 0.5) (pitch *. (turn_number +. 1.0)) in
   [
-    Line { start = { x = current_half_w; y = -.current_half_h }; 
+    Line { start = { x = current_half_w; y = op (-.current_half_h) pitch }; 
            end_point = { x = current_half_w; y = current_half_h } };
     Line { start = { x = current_half_w; y = current_half_h }; 
            end_point = { x = -.current_half_w; y = current_half_h } };
     Line { start = { x = -.current_half_w; y = current_half_h }; 
            end_point = { x = -.current_half_w; y = -.current_half_h } };
     Line { start = { x = -.current_half_w; y = -.current_half_h }; 
-           end_point = { x = next_half_w; y = -.next_half_h } };
+           end_point = { x = next_half_w; y = -.current_half_h } };
   ]
 
 let generate_oval_loop width height turn_number pitch is_inner =
