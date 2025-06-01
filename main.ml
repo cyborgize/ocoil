@@ -448,6 +448,13 @@ let kicad_cmd =
         open_out output_file
     in
     
+    (* Generate KiCad footprint with proper header *)
+    Printf.fprintf output_channel "(footprint \"SpiralCoil\"\n";
+    Printf.fprintf output_channel "    (version 20241229)\n";
+    Printf.fprintf output_channel "    (generator \"copper_trace\")\n";
+    Printf.fprintf output_channel "    (generator_version \"1.0\")\n";
+    Printf.fprintf output_channel "    (layer \"F.Cu\")\n";
+    
     (* Outer pad (start of spiral) *)
     let outer_pad_x = start_point.x *. 1000.0 in
     let outer_pad_y = start_point.y *. 1000.0 in
@@ -471,6 +478,7 @@ let kicad_cmd =
     Printf.fprintf output_channel "        (size %.3f %.3f)\n" pad_size pad_size;
     Printf.fprintf output_channel "        (layers \"F.Cu\")\n";
     Printf.fprintf output_channel "    )\n";
+    Printf.fprintf output_channel ")\n";
     
     (* Close file if it's not stdout *)
     if output_file <> "-" then
