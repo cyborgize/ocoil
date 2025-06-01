@@ -326,21 +326,83 @@ let generate_spiral_path shape pitch turns =
   
   points
 
-let generate_kicad_primitives points track_width =
+let generate_kicad_primitives shape points track_width pitch turns =
   let mm_to_kicad p = { x = p.x *. 1000.0; y = p.y *. 1000.0 } in
   let width_mm = track_width *. 1000.0 in
   
-  let primitives = ref [] in
-  
-  for i = 0 to Array.length points - 2 do
-    let p1 = mm_to_kicad points.(i) in
-    let p2 = mm_to_kicad points.(i + 1) in
-    let primitive = Printf.sprintf "            (gr_line (start %.3f %.3f) (end %.3f %.3f) (width %.3f))" 
-      p1.x p1.y p2.x p2.y width_mm in
-    primitives := primitive :: !primitives
-  done;
-  
-  List.rev !primitives
+  match shape with
+  | Round { diameter } ->
+    (* For round coils, generate proper spiral arcs *)
+    let primitives = ref [] in
+    let num_arcs = max 1 (int_of_float (turns *. 4.0)) in (* 4 arcs per turn *)
+    let angle_per_arc = (2.0 *. Float.pi *. turns) /. float_of_int num_arcs in
+    
+    for i = 0 to num_arcs - 1 do
+      let start_angle = float_of_int i *. angle_per_arc in
+      let end_angle = float_of_int (i + 1) *. angle_per_arc in
+      let mid_angle = (start_angle +. end_angle) *. 0.5 in
+      
+      let start_radius = (diameter *. 0.5 +. pitch *. start_angle /. (2.0 *. Float.pi)) *. 1000.0 in
+      let end_radius = (diameter *. 0.5 +. pitch *. end_angle /. (2.0 *. Float.pi)) *. 1000.0 in
+      let mid_radius = (diameter *. 0.5 +. pitch *. mid_angle /. (2.0 *. Float.pi)) *. 1000.0 in
+      
+      let start_point = { x = start_radius *. cos start_angle; y = start_radius *. sin start_angle } in
+      let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
+      let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
+      
+      let primitive = Printf.sprintf "            (gr_arc (start %.3f %.3f) (mid %.3f %.3f) (end %.3f %.3f) (width %.3f))"
+        start_point.x start_point.y mid_point.x mid_point.y end_point.x end_point.y width_mm in
+      primitives := primitive :: !primitives
+    done;
+    List.rev !primitives
+    
+  | Oval { width; height } ->
+    (* For oval coils, use arcs for rounded ends and lines for straight segments *)
+    let primitives = ref [] in
+    let min_dim = min width height in
+    let is_horizontal = width >= height in
+    
+    (* Approximate with mixed arcs and lines *)
+    for i = 0 to Array.length points - 2 do
+      let p1 = mm_to_kicad points.(i) in
+      let p2 = mm_to_kicad points.(i + 1) in
+      
+      (* Determine if this segment should be an arc or line *)
+      let is_curved_segment = 
+        if is_horizontal then
+          abs_float p1.y > (min_dim *. 1000.0 *. 0.3)
+        else
+          abs_float p1.x > (min_dim *. 1000.0 *. 0.3)
+      in
+      
+      if is_curved_segment && i mod 4 = 0 then
+        (* Use arc for curved sections *)
+        let mid_x = (p1.x +. p2.x) *. 0.5 in
+        let mid_y = (p1.y +. p2.y) *. 0.5 in
+        let primitive = Printf.sprintf "            (gr_arc (start %.3f %.3f) (mid %.3f %.3f) (end %.3f %.3f) (width %.3f))"
+          p1.x p1.y mid_x mid_y p2.x p2.y width_mm in
+        primitives := primitive :: !primitives
+      else
+        (* Use line for straight sections *)
+        let primitive = Printf.sprintf "            (gr_line (start %.3f %.3f) (end %.3f %.3f) (width %.3f))"
+          p1.x p1.y p2.x p2.y width_mm in
+        primitives := primitive :: !primitives
+    done;
+    List.rev !primitives
+    
+  | Square { size = _ } | Rectangular { width = _; height = _ } ->
+    (* For square and rectangular coils, use lines only *)
+    let primitives = ref [] in
+    
+    for i = 0 to Array.length points - 2 do
+      let p1 = mm_to_kicad points.(i) in
+      let p2 = mm_to_kicad points.(i + 1) in
+      let primitive = Printf.sprintf "            (gr_line (start %.3f %.3f) (end %.3f %.3f) (width %.3f))" 
+        p1.x p1.y p2.x p2.y width_mm in
+      primitives := primitive :: !primitives
+    done;
+    
+    List.rev !primitives
 
 (* KiCad subcommand *)
 let kicad_cmd =
@@ -366,7 +428,7 @@ let kicad_cmd =
     in
     
     let points = generate_spiral_path shape pitch turns in
-    let primitives = generate_kicad_primitives points width in
+    let primitives = generate_kicad_primitives shape points width pitch turns in
     
     (* Calculate pad positions - outer pad at start, inner pad at end *)
     let start_point = points.(0) in
