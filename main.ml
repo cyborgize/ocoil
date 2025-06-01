@@ -118,13 +118,66 @@ let inner_diameter_flag =
   let doc = "Treat diameter as inner diameter (default: outer diameter)" in
   Arg.(value & flag & info ["inner-diameter"] ~doc)
 
+type coil_shape = Round | Square | Rectangular | Oval
+
+let parse_coil_shape s =
+  match String.lowercase_ascii s with
+  | "round" | "circle" | "circular" -> Ok Round
+  | "square" -> Ok Square  
+  | "rectangular" | "rect" -> Ok Rectangular
+  | "oval" | "elliptical" -> Ok Oval
+  | _ -> Error (`Msg "Invalid coil shape. Use: round, square, rectangular, oval")
+
+let coil_shape_converter = Arg.conv (parse_coil_shape, fun ppf s -> 
+  let shape_str = match s with
+    | Round -> "round"
+    | Square -> "square" 
+    | Rectangular -> "rectangular"
+    | Oval -> "oval"
+  in Format.fprintf ppf "%s" shape_str)
+
+let shape_arg =
+  let doc = "Coil shape: round, square, rectangular, oval (default: round)" in
+  Arg.(value & opt coil_shape_converter Round & info ["s"; "shape"] ~docv:"SHAPE" ~doc)
+
+let width_dim_arg =
+  let doc = "Width dimension for rectangular/oval coils. Formats: <value>mm, <value>mil, or <value> (mm default)" in
+  Arg.(value & opt (some length_width_converter) None & info ["width-dim"] ~docv:"WIDTH_DIM" ~doc)
+
+let height_dim_arg =
+  let doc = "Height dimension for rectangular/oval coils. Formats: <value>mm, <value>mil, or <value> (mm default)" in
+  Arg.(value & opt (some length_width_converter) None & info ["height-dim"] ~docv:"HEIGHT_DIM" ~doc)
+
 (* Spiral coil length calculation *)
-let calculate_spiral_length diameter pitch turns is_inner =
+let calculate_spiral_length shape diameter pitch turns is_inner width_dim height_dim =
   let op = if is_inner then (+.) else (-.) in
   let radial_expansion = 2.0 *. pitch *. turns in
   let other_diameter = op diameter radial_expansion in
   let avg_diameter = (diameter +. other_diameter) *. 0.5 in
-  let avg_circumference = Float.pi *. avg_diameter in
+  
+  let avg_circumference = match shape with
+    | Round -> Float.pi *. avg_diameter
+    | Square -> 4.0 *. avg_diameter
+    | Rectangular ->
+      (match width_dim, height_dim with
+       | Some w, Some h ->
+         let avg_w = (w +. (op w radial_expansion)) *. 0.5 in
+         let avg_h = (h +. (op h radial_expansion)) *. 0.5 in  
+         2.0 *. (avg_w +. avg_h)
+       | _ -> failwith "Width and height dimensions required for rectangular coils")
+    | Oval ->
+      (match width_dim, height_dim with
+       | Some w, Some h ->
+         let avg_w = (w +. (op w radial_expansion)) *. 0.5 in
+         let avg_h = (h +. (op h radial_expansion)) *. 0.5 in
+         let min_dim = min avg_w avg_h in
+         let max_dim = max avg_w avg_h in
+         let straight_length = max_dim -. min_dim in
+         (* Slot-shaped oval: two straight segments + semicircular ends *)
+         let semicircular_length = Float.pi *. min_dim in
+         2.0 *. straight_length +. semicircular_length
+       | _ -> failwith "Width and height dimensions required for oval coils")
+  in
   avg_circumference *. turns
 
 (* Trace subcommand *)
@@ -143,16 +196,27 @@ let trace_cmd =
 let coil_cmd =
   let doc = "Calculate resistance of a spiral PCB coil" in
   let info = Cmd.info "coil" ~doc in
-  let term = Term.(const (fun diameter pitch turns is_inner width thickness temperature ->
-    let length = calculate_spiral_length diameter pitch turns is_inner in
+  let term = Term.(const (fun diameter pitch turns shape is_inner width_dim height_dim width thickness temperature ->
+    let length = calculate_spiral_length shape diameter pitch turns is_inner width_dim height_dim in
     let resistance = calculate_resistance length width thickness temperature in
     Printf.printf "Spiral coil resistance: %.6f Ohms\n" resistance;
     let diameter_type = if is_inner then "inner" else "outer" in
-    Printf.printf "Diameter (%s): %.3f mm, Pitch: %.3f mm, Turns: %.3f, Calculated length: %.3f mm\n" 
-      diameter_type (diameter *. 1000.0) (pitch *. 1000.0) turns (length *. 1000.0);
+    let shape_str = match shape with
+      | Round -> "round"
+      | Square -> "square"
+      | Rectangular -> "rectangular" 
+      | Oval -> "oval"
+    in
+    Printf.printf "Shape: %s, Diameter (%s): %.3f mm, Pitch: %.3f mm, Turns: %.3f\n" 
+      shape_str diameter_type (diameter *. 1000.0) (pitch *. 1000.0) turns;
+    (match width_dim, height_dim with
+     | Some w, Some h ->
+       Printf.printf "Dimensions: %.3f mm × %.3f mm\n" (w *. 1000.0) (h *. 1000.0)
+     | _ -> ());
+    Printf.printf "Calculated length: %.3f mm\n" (length *. 1000.0);
     Printf.printf "Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
       (width *. 1000.0) (thickness *. 1000.0) temperature
-  ) $ diameter_arg $ pitch_arg $ turns_arg $ inner_diameter_flag $ width_arg $ thickness_arg $ temperature_arg) in
+  ) $ diameter_arg $ pitch_arg $ turns_arg $ shape_arg $ inner_diameter_flag $ width_dim_arg $ height_dim_arg $ width_arg $ thickness_arg $ temperature_arg) in
   Cmd.v info term
 
 (* Main command group *)
