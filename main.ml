@@ -108,11 +108,11 @@ let diameter_arg =
 
 let pitch_arg =
   let doc = "Pitch between turns. Formats: <value>mm, <value>mil, or <value> (mm default)" in
-  Arg.(required & pos 1 (some length_width_converter) None & info [] ~docv:"PITCH" ~doc)
+  Arg.(required & opt (some length_width_converter) None & info ["p"; "pitch"] ~docv:"PITCH" ~doc)
 
 let turns_arg =
   let doc = "Number of turns (can be non-integer, e.g., 2.5)" in
-  Arg.(required & pos 2 (some float) None & info [] ~docv:"TURNS" ~doc)
+  Arg.(required & opt (some float) None & info ["n"; "turns"] ~docv:"TURNS" ~doc)
 
 let inner_diameter_flag =
   let doc = "Treat diameter as inner diameter (default: outer diameter)" in
