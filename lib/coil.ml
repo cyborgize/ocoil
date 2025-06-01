@@ -6,6 +6,10 @@ type coil_shape =
 
 type point = { x: float; y: float }
 
+type path_segment =
+  | Line of { start: point; end_point: point }
+  | Arc of { start: point; mid: point; end_point: point; radius: float }
+
 let calculate_spiral_length shape pitch turns is_inner =
   let op = if is_inner then (+.) else (-.) in
   let radial_expansion = 2.0 *. pitch *. turns in
@@ -35,83 +39,113 @@ let calculate_spiral_length shape pitch turns is_inner =
   in
   avg_circumference *. turns
 
-let generate_spiral_path shape pitch turns =
-  let steps_per_turn = 64 in
-  let total_steps = int_of_float (turns *. float_of_int steps_per_turn) in
-  let angle_step = 2.0 *. Float.pi /. float_of_int steps_per_turn in
+let generate_round_loop radius turn_number pitch =
+  let angle_offset = Float.pi *. 2.0 *. turn_number in
+  let expanded_radius = radius +. pitch *. turn_number in
+  let num_arcs = 8 in
+  let angle_step = Float.pi *. 2.0 /. float_of_int num_arcs in
   
-  let points = Array.make (total_steps + 1) { x = 0.0; y = 0.0 } in
-  
-  for i = 0 to total_steps do
-    let angle = float_of_int i *. angle_step in
-    let turn_progress = float_of_int i /. float_of_int steps_per_turn in
-    let radius_offset = turn_progress *. pitch in
+  List.init num_arcs (fun i ->
+    let start_angle = angle_offset +. float_of_int i *. angle_step in
+    let end_angle = angle_offset +. float_of_int (i + 1) *. angle_step in
+    let mid_angle = (start_angle +. end_angle) *. 0.5 in
     
-    let base_point = match shape with
-      | Round { diameter } ->
-        let radius = diameter *. 0.5 +. radius_offset in
-        { x = radius *. cos angle; y = radius *. sin angle }
-      | Square { size } ->
-        let half_size = size *. 0.5 +. radius_offset in
-        let side_length = 2.0 *. half_size in
-        let perimeter = 4.0 *. side_length in
-        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
-        let pos = mod_float pos perimeter in
-        if pos < side_length then
-          { x = half_size; y = pos -. half_size }
-        else if pos < 2.0 *. side_length then
-          { x = half_size -. (pos -. side_length); y = half_size }
-        else if pos < 3.0 *. side_length then
-          { x = -.half_size; y = half_size -. (pos -. 2.0 *. side_length) }
-        else
-          { x = -.half_size +. (pos -. 3.0 *. side_length); y = -.half_size }
-      | Rectangular { width; height } ->
-        let half_w = width *. 0.5 +. radius_offset in
-        let half_h = height *. 0.5 +. radius_offset in
-        let perimeter = 2.0 *. (half_w *. 2.0 +. half_h *. 2.0) in
-        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
-        let pos = mod_float pos perimeter in
-        if pos < half_w *. 2.0 then
-          { x = half_w; y = pos -. half_w }
-        else if pos < half_w *. 2.0 +. half_h *. 2.0 then
-          { x = half_w -. (pos -. half_w *. 2.0); y = half_h }
-        else if pos < half_w *. 4.0 +. half_h *. 2.0 then
-          { x = -.half_w; y = half_h -. (pos -. half_w *. 2.0 -. half_h *. 2.0) }
-        else
-          { x = -.half_w +. (pos -. half_w *. 4.0 -. half_h *. 2.0); y = -.half_h }
-      | Oval { width; height } ->
-        let half_w = width *. 0.5 +. radius_offset in
-        let half_h = height *. 0.5 +. radius_offset in
-        let min_dim = min half_w half_h in
-        let max_dim = max half_w half_h in
-        let straight_length = max_dim -. min_dim in
-        let perimeter = 2.0 *. straight_length +. Float.pi *. min_dim in
-        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
-        let pos = mod_float pos perimeter in
-        if width >= height then
-          if pos < straight_length then
-            { x = half_w; y = pos -. straight_length *. 0.5 }
-          else if pos < straight_length +. Float.pi *. min_dim *. 0.5 then
-            let arc_angle = (pos -. straight_length) /. min_dim in
-            { x = half_w -. min_dim *. (1.0 -. cos arc_angle); y = half_h +. min_dim *. sin arc_angle }
-          else if pos < straight_length *. 2.0 +. Float.pi *. min_dim *. 0.5 then
-            { x = -.half_w; y = half_h -. (pos -. straight_length -. Float.pi *. min_dim *. 0.5) }
-          else
-            let arc_angle = (pos -. straight_length *. 2.0 -. Float.pi *. min_dim *. 0.5) /. min_dim in
-            { x = -.half_w +. min_dim *. (1.0 -. cos arc_angle); y = -.half_h -. min_dim *. sin arc_angle }
-        else
-          if pos < straight_length then
-            { x = pos -. straight_length *. 0.5; y = half_h }
-          else if pos < straight_length +. Float.pi *. min_dim *. 0.5 then
-            let arc_angle = (pos -. straight_length) /. min_dim in
-            { x = half_w +. min_dim *. sin arc_angle; y = half_h -. min_dim *. (1.0 -. cos arc_angle) }
-          else if pos < straight_length *. 2.0 +. Float.pi *. min_dim *. 0.5 then
-            { x = half_w -. (pos -. straight_length -. Float.pi *. min_dim *. 0.5); y = -.half_h }
-          else
-            let arc_angle = (pos -. straight_length *. 2.0 -. Float.pi *. min_dim *. 0.5) /. min_dim in
-            { x = -.half_w -. min_dim *. sin arc_angle; y = -.half_h +. min_dim *. (1.0 -. cos arc_angle) }
-    in
-    points.(i) <- base_point
-  done;
+    let start_point = { x = expanded_radius *. cos start_angle; y = expanded_radius *. sin start_angle } in
+    let end_point = { x = expanded_radius *. cos end_angle; y = expanded_radius *. sin end_angle } in
+    let mid_point = { x = expanded_radius *. cos mid_angle; y = expanded_radius *. sin mid_angle } in
+    
+    Arc { start = start_point; mid = mid_point; end_point; radius = expanded_radius }
+  )
+
+let generate_square_loop size turn_number pitch =
+  let expanded_half_size = size *. 0.5 +. pitch *. turn_number in
+  [
+    Line { start = { x = expanded_half_size; y = -.expanded_half_size }; 
+           end_point = { x = expanded_half_size; y = expanded_half_size } };
+    Line { start = { x = expanded_half_size; y = expanded_half_size }; 
+           end_point = { x = -.expanded_half_size; y = expanded_half_size } };
+    Line { start = { x = -.expanded_half_size; y = expanded_half_size }; 
+           end_point = { x = -.expanded_half_size; y = -.expanded_half_size } };
+    Line { start = { x = -.expanded_half_size; y = -.expanded_half_size }; 
+           end_point = { x = expanded_half_size; y = -.expanded_half_size } };
+  ]
+
+let generate_rectangular_loop width height turn_number pitch =
+  let expanded_half_w = width *. 0.5 +. pitch *. turn_number in
+  let expanded_half_h = height *. 0.5 +. pitch *. turn_number in
+  [
+    Line { start = { x = expanded_half_w; y = -.expanded_half_h }; 
+           end_point = { x = expanded_half_w; y = expanded_half_h } };
+    Line { start = { x = expanded_half_w; y = expanded_half_h }; 
+           end_point = { x = -.expanded_half_w; y = expanded_half_h } };
+    Line { start = { x = -.expanded_half_w; y = expanded_half_h }; 
+           end_point = { x = -.expanded_half_w; y = -.expanded_half_h } };
+    Line { start = { x = -.expanded_half_w; y = -.expanded_half_h }; 
+           end_point = { x = expanded_half_w; y = -.expanded_half_h } };
+  ]
+
+let generate_oval_loop width height turn_number pitch =
+  let expanded_half_w = width *. 0.5 +. pitch *. turn_number in
+  let expanded_half_h = height *. 0.5 +. pitch *. turn_number in
+  let min_dim = min expanded_half_w expanded_half_h in
+  let is_horizontal = width >= height in
   
-  points
+  if is_horizontal then
+    let straight_length = expanded_half_w -. min_dim in
+    [
+      Line { start = { x = -.straight_length; y = -.min_dim }; 
+             end_point = { x = straight_length; y = -.min_dim } };
+      Arc { start = { x = straight_length; y = -.min_dim }; 
+            mid = { x = expanded_half_w; y = 0.0 }; 
+            end_point = { x = straight_length; y = min_dim }; 
+            radius = min_dim };
+      Line { start = { x = straight_length; y = min_dim }; 
+             end_point = { x = -.straight_length; y = min_dim } };
+      Arc { start = { x = -.straight_length; y = min_dim }; 
+            mid = { x = -.expanded_half_w; y = 0.0 }; 
+            end_point = { x = -.straight_length; y = -.min_dim }; 
+            radius = min_dim };
+    ]
+  else
+    let straight_length = expanded_half_h -. min_dim in
+    [
+      Line { start = { x = -.min_dim; y = -.straight_length }; 
+             end_point = { x = -.min_dim; y = straight_length } };
+      Arc { start = { x = -.min_dim; y = straight_length }; 
+            mid = { x = 0.0; y = expanded_half_h }; 
+            end_point = { x = min_dim; y = straight_length }; 
+            radius = min_dim };
+      Line { start = { x = min_dim; y = straight_length }; 
+             end_point = { x = min_dim; y = -.straight_length } };
+      Arc { start = { x = min_dim; y = -.straight_length }; 
+            mid = { x = 0.0; y = -.expanded_half_h }; 
+            end_point = { x = -.min_dim; y = -.straight_length }; 
+            radius = min_dim };
+    ]
+
+let generate_spiral_segments shape pitch turns =
+  let loop_generator = match shape with
+    | Round { diameter } -> generate_round_loop (diameter *. 0.5)
+    | Square { size } -> generate_square_loop size
+    | Rectangular { width; height } -> generate_rectangular_loop width height
+    | Oval { width; height } -> generate_oval_loop width height
+  in
+  
+  let num_turns = int_of_float (Float.ceil turns) in
+  List.init num_turns (fun i -> 
+    loop_generator (float_of_int i) pitch
+  ) |> List.concat
+
+let generate_spiral_path shape pitch turns =
+  let all_segments = generate_spiral_segments shape pitch turns in
+  
+  (* Extract points from segments for compatibility with existing KiCad code *)
+  let extract_points segments =
+    List.fold_left (fun acc segment ->
+      match segment with
+      | Line { start; end_point } -> start :: end_point :: acc
+      | Arc { start; end_point; _ } -> start :: end_point :: acc
+    ) [] segments |> List.rev |> Array.of_list
+  in
+  
+  extract_points all_segments

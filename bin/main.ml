@@ -210,8 +210,6 @@ let kicad_cmd =
       | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
     in
     
-    let points = Coil.generate_spiral_path shape pitch turns in
-    
     (* Determine output channel *)
     let output_channel = 
       if output_file = "-" then
@@ -220,7 +218,7 @@ let kicad_cmd =
         open_out output_file
     in
     
-    Kicad.generate_footprint output_channel shape points width pitch turns;
+    Kicad.generate_footprint output_channel shape width pitch turns;
     
     (* Close file if it's not stdout *)
     if output_file <> "-" then
