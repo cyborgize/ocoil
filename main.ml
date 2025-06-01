@@ -83,10 +83,7 @@ let calculate_resistance length width thickness temperature =
   let resistance = (resistivity *. length) /. area in
   resistance
 
-let length_arg =
-  let doc = "Length of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default)" in
-  Arg.(required & pos 0 (some length_width_converter) None & info [] ~docv:"LENGTH" ~doc)
-
+(* Common cmdliner argument definitions *)
 let width_arg =
   let doc = "Width of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default). Default: 1mm" in
   Arg.(value & opt length_width_converter 1e-3 & info ["w"; "width"] ~docv:"WIDTH" ~doc)
@@ -99,15 +96,69 @@ let temperature_arg =
   let doc = "Temperature in degrees Celsius (default: 25°C)" in
   Arg.(value & opt float 25.0 & info ["temp"; "temperature"] ~docv:"TEMPERATURE" ~doc)
 
-let copper_trace_cmd =
-  let doc = "Calculate resistance of a copper trace" in
-  let info = Cmd.info "copper_trace" ~doc in
+(* Trace subcommand arguments *)
+let trace_length_arg =
+  let doc = "Length of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default)" in
+  Arg.(required & pos 0 (some length_width_converter) None & info [] ~docv:"LENGTH" ~doc)
+
+(* Coil subcommand arguments *)
+let diameter_arg =
+  let doc = "Diameter of the spiral coil. Formats: <value>mm, <value>mil, or <value> (mm default)" in
+  Arg.(required & pos 0 (some length_width_converter) None & info [] ~docv:"DIAMETER" ~doc)
+
+let pitch_arg =
+  let doc = "Pitch between turns. Formats: <value>mm, <value>mil, or <value> (mm default)" in
+  Arg.(required & pos 1 (some length_width_converter) None & info [] ~docv:"PITCH" ~doc)
+
+let turns_arg =
+  let doc = "Number of turns (can be non-integer, e.g., 2.5)" in
+  Arg.(required & pos 2 (some float) None & info [] ~docv:"TURNS" ~doc)
+
+let inner_diameter_flag =
+  let doc = "Treat diameter as inner diameter (default: outer diameter)" in
+  Arg.(value & flag & info ["inner-diameter"] ~doc)
+
+(* Spiral coil length calculation *)
+let calculate_spiral_length diameter pitch turns is_inner =
+  let op = if is_inner then (+.) else (-.) in
+  let radial_expansion = 2.0 *. pitch *. turns in
+  let other_diameter = op diameter radial_expansion in
+  let avg_diameter = (diameter +. other_diameter) *. 0.5 in
+  let avg_circumference = Float.pi *. avg_diameter in
+  avg_circumference *. turns
+
+(* Trace subcommand *)
+let trace_cmd =
+  let doc = "Calculate resistance of a copper trace by length" in
+  let info = Cmd.info "trace" ~doc in
   let term = Term.(const (fun length width thickness temperature ->
     let resistance = calculate_resistance length width thickness temperature in
     Printf.printf "Copper trace resistance: %.6f Ohms\n" resistance;
     Printf.printf "Length: %.3f mm, Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
       (length *. 1000.0) (width *. 1000.0) (thickness *. 1000.0) temperature
-  ) $ length_arg $ width_arg $ thickness_arg $ temperature_arg) in
+  ) $ trace_length_arg $ width_arg $ thickness_arg $ temperature_arg) in
   Cmd.v info term
 
-let () = exit (Cmd.eval copper_trace_cmd)
+(* Coil subcommand *)
+let coil_cmd =
+  let doc = "Calculate resistance of a spiral PCB coil" in
+  let info = Cmd.info "coil" ~doc in
+  let term = Term.(const (fun diameter pitch turns is_inner width thickness temperature ->
+    let length = calculate_spiral_length diameter pitch turns is_inner in
+    let resistance = calculate_resistance length width thickness temperature in
+    Printf.printf "Spiral coil resistance: %.6f Ohms\n" resistance;
+    let diameter_type = if is_inner then "inner" else "outer" in
+    Printf.printf "Diameter (%s): %.3f mm, Pitch: %.3f mm, Turns: %.3f, Calculated length: %.3f mm\n" 
+      diameter_type (diameter *. 1000.0) (pitch *. 1000.0) turns (length *. 1000.0);
+    Printf.printf "Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
+      (width *. 1000.0) (thickness *. 1000.0) temperature
+  ) $ diameter_arg $ pitch_arg $ turns_arg $ inner_diameter_flag $ width_arg $ thickness_arg $ temperature_arg) in
+  Cmd.v info term
+
+(* Main command group *)
+let main_cmd =
+  let doc = "Calculate resistance of copper traces and coils" in
+  let info = Cmd.info "copper_trace" ~doc in
+  Cmd.group info [trace_cmd; coil_cmd]
+
+let () = exit (Cmd.eval main_cmd)
