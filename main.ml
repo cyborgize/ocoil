@@ -242,10 +242,167 @@ let coil_cmd =
   in
   Cmd.v info term
 
+(* KiCad footprint generation *)
+type point = { x: float; y: float }
+
+let generate_spiral_path shape pitch turns =
+  let steps_per_turn = 64 in
+  let total_steps = int_of_float (turns *. float_of_int steps_per_turn) in
+  let angle_step = 2.0 *. Float.pi /. float_of_int steps_per_turn in
+  
+  let points = Array.make (total_steps + 1) { x = 0.0; y = 0.0 } in
+  
+  for i = 0 to total_steps do
+    let angle = float_of_int i *. angle_step in
+    let turn_progress = float_of_int i /. float_of_int steps_per_turn in
+    let radius_offset = turn_progress *. pitch in
+    
+    let base_point = match shape with
+      | Round { diameter } ->
+        let radius = diameter *. 0.5 +. radius_offset in
+        { x = radius *. cos angle; y = radius *. sin angle }
+      | Square { size } ->
+        let half_size = size *. 0.5 +. radius_offset in
+        let side_length = 2.0 *. half_size in
+        let perimeter = 4.0 *. side_length in
+        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
+        let pos = mod_float pos perimeter in
+        if pos < side_length then
+          { x = half_size; y = pos -. half_size }
+        else if pos < 2.0 *. side_length then
+          { x = half_size -. (pos -. side_length); y = half_size }
+        else if pos < 3.0 *. side_length then
+          { x = -.half_size; y = half_size -. (pos -. 2.0 *. side_length) }
+        else
+          { x = -.half_size +. (pos -. 3.0 *. side_length); y = -.half_size }
+      | Rectangular { width; height } ->
+        let half_w = width *. 0.5 +. radius_offset in
+        let half_h = height *. 0.5 +. radius_offset in
+        let perimeter = 2.0 *. (half_w *. 2.0 +. half_h *. 2.0) in
+        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
+        let pos = mod_float pos perimeter in
+        if pos < half_w *. 2.0 then
+          { x = half_w; y = pos -. half_w }
+        else if pos < half_w *. 2.0 +. half_h *. 2.0 then
+          { x = half_w -. (pos -. half_w *. 2.0); y = half_h }
+        else if pos < half_w *. 4.0 +. half_h *. 2.0 then
+          { x = -.half_w; y = half_h -. (pos -. half_w *. 2.0 -. half_h *. 2.0) }
+        else
+          { x = -.half_w +. (pos -. half_w *. 4.0 -. half_h *. 2.0); y = -.half_h }
+      | Oval { width; height } ->
+        let half_w = width *. 0.5 +. radius_offset in
+        let half_h = height *. 0.5 +. radius_offset in
+        let min_dim = min half_w half_h in
+        let max_dim = max half_w half_h in
+        let straight_length = max_dim -. min_dim in
+        let perimeter = 2.0 *. straight_length +. Float.pi *. min_dim in
+        let pos = (angle /. (2.0 *. Float.pi)) *. perimeter in
+        let pos = mod_float pos perimeter in
+        if width >= height then
+          if pos < straight_length then
+            { x = half_w; y = pos -. straight_length *. 0.5 }
+          else if pos < straight_length +. Float.pi *. min_dim *. 0.5 then
+            let arc_angle = (pos -. straight_length) /. min_dim in
+            { x = half_w -. min_dim *. (1.0 -. cos arc_angle); y = half_h +. min_dim *. sin arc_angle }
+          else if pos < straight_length *. 2.0 +. Float.pi *. min_dim *. 0.5 then
+            { x = -.half_w; y = half_h -. (pos -. straight_length -. Float.pi *. min_dim *. 0.5) }
+          else
+            let arc_angle = (pos -. straight_length *. 2.0 -. Float.pi *. min_dim *. 0.5) /. min_dim in
+            { x = -.half_w +. min_dim *. (1.0 -. cos arc_angle); y = -.half_h -. min_dim *. sin arc_angle }
+        else
+          if pos < straight_length then
+            { x = pos -. straight_length *. 0.5; y = half_h }
+          else if pos < straight_length +. Float.pi *. min_dim *. 0.5 then
+            let arc_angle = (pos -. straight_length) /. min_dim in
+            { x = half_w +. min_dim *. sin arc_angle; y = half_h -. min_dim *. (1.0 -. cos arc_angle) }
+          else if pos < straight_length *. 2.0 +. Float.pi *. min_dim *. 0.5 then
+            { x = half_w -. (pos -. straight_length -. Float.pi *. min_dim *. 0.5); y = -.half_h }
+          else
+            let arc_angle = (pos -. straight_length *. 2.0 -. Float.pi *. min_dim *. 0.5) /. min_dim in
+            { x = -.half_w -. min_dim *. sin arc_angle; y = -.half_h +. min_dim *. (1.0 -. cos arc_angle) }
+    in
+    points.(i) <- base_point
+  done;
+  
+  points
+
+let generate_kicad_primitives points track_width =
+  let mm_to_kicad p = { x = p.x *. 1000.0; y = p.y *. 1000.0 } in
+  let width_mm = track_width *. 1000.0 in
+  
+  let primitives = ref [] in
+  
+  for i = 0 to Array.length points - 2 do
+    let p1 = mm_to_kicad points.(i) in
+    let p2 = mm_to_kicad points.(i + 1) in
+    let primitive = Printf.sprintf "            (gr_line (start %.3f %.3f) (end %.3f %.3f) (width %.3f))" 
+      p1.x p1.y p2.x p2.y width_mm in
+    primitives := primitive :: !primitives
+  done;
+  
+  List.rev !primitives
+
+(* KiCad subcommand *)
+let kicad_cmd =
+  let doc = "Generate KiCad footprint pad definition for a spiral coil" in
+  let info = Cmd.info "kicad" ~doc in
+  let term = 
+    let open Cmdliner.Term.Syntax in
+    let+ round_opt = round_arg
+    and+ square_opt = square_arg
+    and+ rectangle_opt = rectangle_arg
+    and+ oval_opt = oval_arg
+    and+ pitch = pitch_arg
+    and+ turns = turns_arg
+    and+ width = width_arg
+    in
+    let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
+      | Some diameter, None, None, None -> Round { diameter }
+      | None, Some size, None, None -> Square { size }
+      | None, None, Some (width, height), None -> Rectangular { width; height }
+      | None, None, None, Some (width, height) -> Oval { width; height }
+      | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
+      | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
+    in
+    
+    let points = generate_spiral_path shape pitch turns in
+    let primitives = generate_kicad_primitives points width in
+    
+    (* Calculate pad positions - outer pad at start, inner pad at end *)
+    let start_point = points.(0) in
+    let end_point = points.(Array.length points - 1) in
+    let pad_size = width *. 1000.0 in
+    
+    (* Outer pad (start of spiral) *)
+    let outer_pad_x = start_point.x *. 1000.0 in
+    let outer_pad_y = start_point.y *. 1000.0 in
+    
+    Printf.printf "    (pad \"1\" smd custom\n";
+    Printf.printf "        (at %.3f %.3f)\n" outer_pad_x outer_pad_y;
+    Printf.printf "        (size %.3f %.3f)\n" pad_size pad_size;
+    Printf.printf "        (layers \"F.Cu\")\n";
+    Printf.printf "        (options (clearance outline) (anchor circle))\n";
+    Printf.printf "        (primitives\n";
+    List.iter (fun primitive -> Printf.printf "%s\n" primitive) primitives;
+    Printf.printf "        )\n";
+    Printf.printf "    )\n";
+    
+    (* Inner pad (end of spiral) *)
+    let inner_pad_x = end_point.x *. 1000.0 in
+    let inner_pad_y = end_point.y *. 1000.0 in
+    
+    Printf.printf "    (pad \"2\" smd circle\n";
+    Printf.printf "        (at %.3f %.3f)\n" inner_pad_x inner_pad_y;
+    Printf.printf "        (size %.3f %.3f)\n" pad_size pad_size;
+    Printf.printf "        (layers \"F.Cu\")\n";
+    Printf.printf "    )\n"
+  in
+  Cmd.v info term
+
 (* Main command group *)
 let main_cmd =
   let doc = "Calculate resistance of copper traces and coils" in
   let info = Cmd.info "copper_trace" ~doc in
-  Cmd.group info [trace_cmd; coil_cmd]
+  Cmd.group info [trace_cmd; coil_cmd; kicad_cmd]
 
 let () = exit (Cmd.eval main_cmd)
