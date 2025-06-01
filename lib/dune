@@ -1,0 +1,3 @@
+(library
+ (public_name copper_trace_lib)
+ (name copper_trace_lib))
