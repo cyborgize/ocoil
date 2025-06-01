@@ -148,6 +148,10 @@ let height_dim_arg =
   let doc = "Height dimension for rectangular/oval coils. Formats: <value>mm, <value>mil, or <value> (mm default)" in
   Arg.(value & opt (some length_width_converter) None & info ["height-dim"] ~docv:"HEIGHT_DIM" ~doc)
 
+let layers_arg =
+  let doc = "Number of PCB layers (default: 1)" in
+  Arg.(value & opt int 1 & info ["layers"] ~docv:"LAYERS" ~doc)
+
 (* Spiral coil length calculation *)
 let calculate_spiral_length shape diameter pitch turns is_inner width_dim height_dim =
   let op = if is_inner then (+.) else (-.) in
@@ -196,9 +200,10 @@ let trace_cmd =
 let coil_cmd =
   let doc = "Calculate resistance of a spiral PCB coil" in
   let info = Cmd.info "coil" ~doc in
-  let term = Term.(const (fun diameter pitch turns shape is_inner width_dim height_dim width thickness temperature ->
-    let length = calculate_spiral_length shape diameter pitch turns is_inner width_dim height_dim in
-    let resistance = calculate_resistance length width thickness temperature in
+  let term = Term.(const (fun diameter pitch turns shape is_inner width_dim height_dim layers width thickness temperature ->
+    let single_layer_length = calculate_spiral_length shape diameter pitch turns is_inner width_dim height_dim in
+    let total_length = single_layer_length *. (float_of_int layers) in
+    let resistance = calculate_resistance total_length width thickness temperature in
     Printf.printf "Spiral coil resistance: %.6f Ohms\n" resistance;
     let diameter_type = if is_inner then "inner" else "outer" in
     let shape_str = match shape with
@@ -213,10 +218,11 @@ let coil_cmd =
      | Some w, Some h ->
        Printf.printf "Dimensions: %.3f mm × %.3f mm\n" (w *. 1000.0) (h *. 1000.0)
      | _ -> ());
-    Printf.printf "Calculated length: %.3f mm\n" (length *. 1000.0);
+    Printf.printf "Layers: %d, Length per layer: %.3f mm, Total length: %.3f mm\n" 
+      layers (single_layer_length *. 1000.0) (total_length *. 1000.0);
     Printf.printf "Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
       (width *. 1000.0) (thickness *. 1000.0) temperature
-  ) $ diameter_arg $ pitch_arg $ turns_arg $ shape_arg $ inner_diameter_flag $ width_dim_arg $ height_dim_arg $ width_arg $ thickness_arg $ temperature_arg) in
+  ) $ diameter_arg $ pitch_arg $ turns_arg $ shape_arg $ inner_diameter_flag $ width_dim_arg $ height_dim_arg $ layers_arg $ width_arg $ thickness_arg $ temperature_arg) in
   Cmd.v info term
 
 (* Main command group *)
