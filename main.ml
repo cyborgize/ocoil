@@ -122,22 +122,10 @@ type coil_shape =
   | Rectangular of { width : float; height : float }
   | Oval of { width : float; height : float }
 
-let parse_dimensions s =
-  let parts = String.split_on_char 'x' s in
-  match parts with
-  | [w; h] ->
-    (try
-       let width = Float.of_string (String.trim w) in
-       let height = Float.of_string (String.trim h) in
-       Ok (width, height)
-     with
-     | Failure _ -> Error (`Msg "Invalid dimension format. Use: <width>x<height>"))
-  | _ -> Error (`Msg "Invalid dimension format. Use: <width>x<height>")
-
 let round_converter = Arg.conv (parse_length_width, fun ppf d -> Format.fprintf ppf "%.6e" d)
 let square_converter = Arg.conv (parse_length_width, fun ppf s -> Format.fprintf ppf "%.6e" s)
-let rectangle_converter = Arg.conv (parse_dimensions, fun ppf (w, h) -> Format.fprintf ppf "%.6ex%.6e" w h)
-let oval_converter = Arg.conv (parse_dimensions, fun ppf (w, h) -> Format.fprintf ppf "%.6ex%.6e" w h)
+let rectangle_converter = Arg.pair ~sep:'x' length_width_converter length_width_converter
+let oval_converter = Arg.pair ~sep:'x' length_width_converter length_width_converter
 
 let round_arg =
   let doc = "Round coil with specified diameter. Formats: <value>mm, <value>mil, or <value> (mm default)" in
@@ -209,8 +197,8 @@ let coil_cmd =
     let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
       | Some diameter, None, None, None -> Round { diameter }
       | None, Some size, None, None -> Square { size }
-      | None, None, Some (w, h), None -> Rectangular { width = w *. 1e-3; height = h *. 1e-3 }
-      | None, None, None, Some (w, h) -> Oval { width = w *. 1e-3; height = h *. 1e-3 }
+      | None, None, Some (width, height), None -> Rectangular { width; height }
+      | None, None, None, Some (width, height) -> Oval { width; height }
       | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
       | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
     in
