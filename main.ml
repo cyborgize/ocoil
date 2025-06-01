@@ -177,23 +177,43 @@ let calculate_spiral_length shape pitch turns is_inner =
   in
   avg_circumference *. turns
 
+
 (* Trace subcommand *)
 let trace_cmd =
   let doc = "Calculate resistance of a copper trace by length" in
   let info = Cmd.info "trace" ~doc in
-  let term = Term.(const (fun length width thickness temperature ->
+  let term = 
+    let open Cmdliner.Term.Syntax in
+    let+ length = trace_length_arg
+    and+ width = width_arg
+    and+ thickness = thickness_arg
+    and+ temperature = temperature_arg
+    in
     let resistance = calculate_resistance length width thickness temperature in
     Printf.printf "Copper trace resistance: %.6f Ohms\n" resistance;
     Printf.printf "Length: %.3f mm, Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
       (length *. 1000.0) (width *. 1000.0) (thickness *. 1000.0) temperature
-  ) $ trace_length_arg $ width_arg $ thickness_arg $ temperature_arg) in
+  in
   Cmd.v info term
 
 (* Coil subcommand *)
 let coil_cmd =
   let doc = "Calculate resistance of a spiral PCB coil" in
   let info = Cmd.info "coil" ~doc in
-  let term = Term.(const (fun round_opt square_opt rectangle_opt oval_opt pitch turns is_inner layers width thickness temperature ->
+  let term = 
+    let open Cmdliner.Term.Syntax in
+    let+ round_opt = round_arg
+    and+ square_opt = square_arg
+    and+ rectangle_opt = rectangle_arg
+    and+ oval_opt = oval_arg
+    and+ pitch = pitch_arg
+    and+ turns = turns_arg
+    and+ is_inner = inner_diameter_flag
+    and+ layers = layers_arg
+    and+ width = width_arg
+    and+ thickness = thickness_arg
+    and+ temperature = temperature_arg
+    in
     let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
       | Some diameter, None, None, None -> Round { diameter }
       | None, Some size, None, None -> Square { size }
@@ -219,7 +239,7 @@ let coil_cmd =
       layers (single_layer_length *. 1000.0) (total_length *. 1000.0);
     Printf.printf "Width: %.3f mm, Thickness: %.3f mm, Temperature: %.1f°C\n" 
       (width *. 1000.0) (thickness *. 1000.0) temperature
-  ) $ round_arg $ square_arg $ rectangle_arg $ oval_arg $ pitch_arg $ turns_arg $ inner_diameter_flag $ layers_arg $ width_arg $ thickness_arg $ temperature_arg) in
+  in
   Cmd.v info term
 
 (* Main command group *)

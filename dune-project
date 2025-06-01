@@ -2,4 +2,4 @@
 
 (package
  (name copper_trace)
- (depends ocaml dune cmdliner))
+ (depends ocaml dune (cmdliner (>= 1.3.0))))
