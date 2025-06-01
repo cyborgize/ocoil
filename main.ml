@@ -404,6 +404,10 @@ let generate_kicad_primitives shape points track_width pitch turns =
     
     List.rev !primitives
 
+let output_arg =
+  let doc = "Output file for KiCad footprint (default: stdout, use \"-\" for stdout)" in
+  Arg.(value & opt string "-" & info ["o"; "output"] ~docv:"FILE" ~doc)
+
 (* KiCad subcommand *)
 let kicad_cmd =
   let doc = "Generate KiCad footprint pad definition for a spiral coil" in
@@ -417,6 +421,7 @@ let kicad_cmd =
     and+ pitch = pitch_arg
     and+ turns = turns_arg
     and+ width = width_arg
+    and+ output_file = output_arg
     in
     let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
       | Some diameter, None, None, None -> Round { diameter }
@@ -435,29 +440,41 @@ let kicad_cmd =
     let end_point = points.(Array.length points - 1) in
     let pad_size = width *. 1000.0 in
     
+    (* Determine output channel *)
+    let output_channel = 
+      if output_file = "-" then
+        stdout
+      else
+        open_out output_file
+    in
+    
     (* Outer pad (start of spiral) *)
     let outer_pad_x = start_point.x *. 1000.0 in
     let outer_pad_y = start_point.y *. 1000.0 in
     
-    Printf.printf "    (pad \"1\" smd custom\n";
-    Printf.printf "        (at %.3f %.3f)\n" outer_pad_x outer_pad_y;
-    Printf.printf "        (size %.3f %.3f)\n" pad_size pad_size;
-    Printf.printf "        (layers \"F.Cu\")\n";
-    Printf.printf "        (options (clearance outline) (anchor circle))\n";
-    Printf.printf "        (primitives\n";
-    List.iter (fun primitive -> Printf.printf "%s\n" primitive) primitives;
-    Printf.printf "        )\n";
-    Printf.printf "    )\n";
+    Printf.fprintf output_channel "    (pad \"1\" smd custom\n";
+    Printf.fprintf output_channel "        (at %.3f %.3f)\n" outer_pad_x outer_pad_y;
+    Printf.fprintf output_channel "        (size %.3f %.3f)\n" pad_size pad_size;
+    Printf.fprintf output_channel "        (layers \"F.Cu\")\n";
+    Printf.fprintf output_channel "        (options (clearance outline) (anchor circle))\n";
+    Printf.fprintf output_channel "        (primitives\n";
+    List.iter (fun primitive -> Printf.fprintf output_channel "%s\n" primitive) primitives;
+    Printf.fprintf output_channel "        )\n";
+    Printf.fprintf output_channel "    )\n";
     
     (* Inner pad (end of spiral) *)
     let inner_pad_x = end_point.x *. 1000.0 in
     let inner_pad_y = end_point.y *. 1000.0 in
     
-    Printf.printf "    (pad \"2\" smd circle\n";
-    Printf.printf "        (at %.3f %.3f)\n" inner_pad_x inner_pad_y;
-    Printf.printf "        (size %.3f %.3f)\n" pad_size pad_size;
-    Printf.printf "        (layers \"F.Cu\")\n";
-    Printf.printf "    )\n"
+    Printf.fprintf output_channel "    (pad \"2\" smd circle\n";
+    Printf.fprintf output_channel "        (at %.3f %.3f)\n" inner_pad_x inner_pad_y;
+    Printf.fprintf output_channel "        (size %.3f %.3f)\n" pad_size pad_size;
+    Printf.fprintf output_channel "        (layers \"F.Cu\")\n";
+    Printf.fprintf output_channel "    )\n";
+    
+    (* Close file if it's not stdout *)
+    if output_file <> "-" then
+      close_out output_channel
   in
   Cmd.v info term
 
