@@ -75,22 +75,125 @@ type kicad_pad' = {
   layers : string list;
   options : kicad_pad_options option [@sexp.option];
   primitives : gr_primitive list fields [@sexp.omit_nil];
+  uuid : string;
 } [@@deriving sexp_of]
 
 type kicad_pad = (kicad_pad'' field, kicad_pad' fields) pair [@@deriving sexp_of]
+
+type property_at = pad_coord [@@deriving sexp_of]
+type property_unlocked = [ `yes ] [@@deriving sexp_of]
+type property_layer = string [@@deriving sexp_of]
+type property_hide = [ `yes ] [@@deriving sexp_of] 
+type property_uuid = string [@@deriving sexp_of]
+
+type property_font' = {
+  size : float * float;
+  thickness : float;
+} [@@deriving sexp_of]
+
+type property_font = property_font' fields [@@deriving sexp_of]
+
+type property_effects' = {
+  font : property_font;
+} [@@deriving sexp_of]
+
+type property_effects = property_effects' fields [@@deriving sexp_of]
+
+type kicad_property'' = [ `property of string * string ] [@@deriving sexp_of]
+
+type kicad_property' = {
+  at : property_at;
+  unlocked : property_unlocked option [@sexp.option];
+  layer : property_layer;
+  hide : property_hide option [@sexp.option];
+  uuid : property_uuid;
+  effects : property_effects;
+} [@@deriving sexp_of]
+
+type kicad_property = (kicad_property'' field, kicad_property' fields) pair [@@deriving sexp_of]
+
+type fp_rect_coord = float * float [@@deriving sexp_of]
+
+type fp_rect_stroke' = {
+  width : float;
+  type_ : [ `solid ];
+} [@@deriving sexp_of]
+
+type fp_rect_stroke = fp_rect_stroke' trim fields [@@deriving sexp_of]
+
+type fp_rect'' = [ `fp_rect ] [@@deriving sexp_of]
+
+type fp_rect' = {
+  start : fp_rect_coord;
+  end_ : fp_rect_coord;
+  stroke : fp_rect_stroke;
+  fill : [ `no ];
+  layer : string;
+  uuid : string;
+} [@@deriving sexp_of]
+
+type fp_rect = (fp_rect'' field, fp_rect' trim fields) pair [@@deriving sexp_of]
+
+type fp_text_coord = float * float * float [@@deriving sexp_of]
+
+type fp_text_font' = {
+  size : float * float;
+  thickness : float;
+} [@@deriving sexp_of]
+
+type fp_text_font = fp_text_font' fields [@@deriving sexp_of]
+
+type fp_text_effects' = {
+  font : fp_text_font;
+  justify : [ `mirror ] option [@sexp.option];
+} [@@deriving sexp_of]
+
+type fp_text_effects = fp_text_effects' fields [@@deriving sexp_of]
+
+type fp_text'' = [ `fp_text of [ `user ] * string ] [@@deriving sexp_of]
+
+type fp_text' = {
+  at : fp_text_coord;
+  unlocked : [ `yes ] option [@sexp.option];
+  layer : string;
+  uuid : string;
+  effects : fp_text_effects;
+} [@@deriving sexp_of]
+
+type fp_text = (fp_text'' field, fp_text' fields) pair [@@deriving sexp_of]
 
 type kicad_footprint_meta = {
   version : int;
   generator : string;
   generator_version : string;
-  layer : string
+  layer : string;
+  attr : [ `smd ];
+  embedded_fonts : [ `no ];
 } [@@deriving sexp_of]
 
 type kicad_footprint_pads = kicad_pad list [@@deriving sexp_of]
 
+type kicad_footprint_properties = kicad_property list [@@deriving sexp_of]
+
+type kicad_footprint_rectangles = fp_rect list [@@deriving sexp_of]
+
+type kicad_footprint_texts = fp_text list [@@deriving sexp_of]
+
 type kicad_footprint = (
     [ `footprint of string ],
-    (kicad_footprint_meta, kicad_footprint_pads) pair
+    (
+      kicad_footprint_meta,
+      (
+        kicad_footprint_properties,
+        (
+          kicad_footprint_rectangles,
+          (
+            kicad_footprint_texts,
+            kicad_footprint_pads
+          ) pair
+        ) pair
+      ) pair
+    ) pair
   ) pair [@@deriving sexp_of]
 
 (* Convert spiral segments to KiCad primitives *)
@@ -145,6 +248,7 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     layers = ["F.Cu"];
     options = Some { clearance = `outline; anchor = `circle; };
     primitives = relative_primitives;
+    uuid = "14a21f80-a77f-4136-92e0-923221b0e518";
   } in
            
   let pad2 = `pad ("2", `smd, `circle), {
@@ -153,6 +257,97 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     layers = ["F.Cu"];
     options = None;
     primitives = [];
+    uuid = "51855533-01a7-4cb4-87b1-27ff621360b1";
+  } in
+  
+  (* Create properties *)
+  let ref_property = `property ("Reference", "L**"), {
+    at = (0.0, -0.5);
+    unlocked = Some `yes;
+    layer = "F.SilkS";
+    hide = Some `yes;
+    uuid = "c53f67d9-d280-48cc-b065-55df925e8d56";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.1 }; };
+  } in
+  
+  let value_property = `property ("Value", "Val**"), {
+    at = (0.0, 1.0);
+    unlocked = Some `yes;
+    layer = "F.Fab";
+    hide = Some `yes;
+    uuid = "dcb50d06-6893-4b51-a6f1-3a9e9428cb83";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
+  } in
+  
+  let datasheet_property = `property ("Datasheet", ""), {
+    at = (0.0, 0.0);
+    unlocked = Some `yes;
+    layer = "F.Fab";
+    hide = Some `yes;
+    uuid = "cf551db9-fc86-4936-b027-051c526e4bcd";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
+  } in
+  
+  let description_property = `property ("Description", ""), {
+    at = (0.0, 0.0);
+    unlocked = Some `yes;
+    layer = "F.Fab";
+    hide = Some `yes;
+    uuid = "184cda2b-7a4b-4003-af2a-58ca378cc9de";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
+  } in
+  
+  let mfr_property = `property ("MFR", "Coil_15x7_T0.5_P0.6_2SA"), {
+    at = (0.0, 0.0);
+    unlocked = None;
+    layer = "F.Fab";
+    hide = Some `yes;
+    uuid = "3826364c-19d9-4f33-a074-aa49377a9ce9";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
+  } in
+  
+  let mfn_property = `property ("MFN", "157S2W50P60T050A"), {
+    at = (0.0, 0.0);
+    unlocked = None;
+    layer = "F.Fab";
+    hide = None;
+    uuid = "4554da17-05d2-4bc7-9de7-a5e9cf606005";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
+  } in
+  
+  (* Create footprint rectangle *)
+  let fp_rectangle = `fp_rect, {
+    start = (-7.5, -3.5);
+    end_ = (7.5, 3.5);
+    stroke = { width = 0.1; type_ = `solid; };
+    fill = `no;
+    layer = "F.SilkS";
+    uuid = "b55377dc-9f66-4417-90d6-e165a7b32bc3";
+  } in
+  
+  (* Create footprint texts *)
+  let mfn_text = `fp_text (`user, "${MFN}"), {
+    at = (0.0, 0.0, 0.0);
+    unlocked = Some `yes;
+    layer = "F.SilkS";
+    uuid = "222182e3-a584-4cc6-a41b-c064499fe8b3";
+    effects = { font = { size = (0.9, 0.9); thickness = 0.1 }; justify = None; };
+  } in
+  
+  let ref_text_back = `fp_text (`user, "${REFERENCE}"), {
+    at = (0.0, -2.2125, 180.0);
+    unlocked = Some `yes;
+    layer = "B.Fab";
+    uuid = "424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; justify = Some `mirror; };
+  } in
+  
+  let ref_text_front = `fp_text (`user, "${REFERENCE}"), {
+    at = (0.0, 2.4875, 0.0);
+    unlocked = Some `yes;
+    layer = "F.Fab";
+    uuid = "0439e334-26b8-4223-ace8-f721b97f5b67";
+    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; justify = None; };
   } in
   
   let footprint =
@@ -163,8 +358,10 @@ let generate_footprint output_channel shape width pitch turns is_inner =
         generator = "copper_trace";
         generator_version = "1.0 ";
         layer = "F.Cu";
+        attr = `smd;
+        embedded_fonts = `no;
       },
-      [pad1; pad2]
+      ([ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property], ([fp_rectangle], ([mfn_text; ref_text_back; ref_text_front], [pad1; pad2])))
     )
   in
   
