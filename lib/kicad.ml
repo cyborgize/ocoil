@@ -341,10 +341,25 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     ~unlocked:None
     ~hide:None () in
   
+  (* Calculate rectangle dimensions based on coil shape *)
+  let base_width, base_height = match shape with
+    | Round { diameter } -> (diameter, diameter)
+    | Square { size } -> (size, size)
+    | Rectangular { width; height } -> (width, height)
+    | Oval { width; height } -> (width, height)
+  in
+  
+  (* Add clearance: pitch already includes trace width *)
+  let clearance = pitch in
+  let rect_width = (base_width +. clearance) *. 1000.0 in  (* Convert to mm *)
+  let rect_height = (base_height +. clearance) *. 1000.0 in  (* Convert to mm *)
+  let half_width = rect_width /. 2.0 in
+  let half_height = rect_height /. 2.0 in
+  
   (* Create footprint rectangle *)
   let fp_rectangle = create_fp_rect
-    ~start:(-7.5, -3.5)
-    ~end_:(7.5, 3.5)
+    ~start:(-.half_width, -.half_height)
+    ~end_:(half_width, half_height)
     ~stroke_width:0.1
     ~stroke_type:`solid
     ~fill:`no
