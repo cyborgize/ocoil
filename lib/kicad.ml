@@ -2,77 +2,61 @@ open Coil
 open Sexplib0.Sexp_conv
 module Sexp = Sexplib0.Sexp
 
-type kicad_point = {
-  x: float;
-  y: float;
-} [@@deriving sexp_of]
+type ('a, 'b) pair = 'a * 'b [@@deriving sexp_of]
 
-type gr_line = {
-  start: kicad_point;
-  end_point: kicad_point;
-  width: float;
-} [@@deriving sexp_of]
+let sexp_of_pair sexp_of_a sexp_of_b (a, b) =
+  let auto_generated = sexp_of_pair sexp_of_a sexp_of_b (a, b) in
+  let open Sexp in
+  match auto_generated with
+  | List [List [a_sexp]; List [b_sexp]]
+  | List [a_sexp; List [b_sexp]]
+  | List [List [a_sexp]; b_sexp]
+  | List [a_sexp; b_sexp] -> List [a_sexp; b_sexp]
+  | _ -> auto_generated
 
-type gr_arc = {
-  start: kicad_point;
-  mid: kicad_point;
-  end_point: kicad_point;
-  width: float;
-} [@@deriving sexp_of]
+type gr_start = [ `start of float * float ] [@@deriving sexp_of]
+type gr_end_point = [ `gr_end of float * float ] [@@deriving sexp_of]  
+type gr_mid = [ `mid of float * float ] [@@deriving sexp_of]
+type gr_width = [ `width of float ] [@@deriving sexp_of]
 
-type kicad_primitive = 
-  | GrLine of gr_line
-  | GrArc of gr_arc
+(* Only need custom function for end since it's a reserved keyword *)
+let sexp_of_gr_end_point = function
+  | `gr_end (f1, f2) -> Sexp.List [Sexp.Atom "end"; sexp_of_float f1; sexp_of_float f2]
 
-let sexp_of_kicad_primitive = function
-  | GrLine gr_line -> Sexp.List [Sexp.Atom "gr_line"; sexp_of_gr_line gr_line]
-  | GrArc gr_arc -> Sexp.List [Sexp.Atom "gr_arc"; sexp_of_gr_arc gr_arc]
+type gr_line = gr_start * gr_end_point * gr_width [@@deriving sexp_of]
+type gr_arc = gr_start * gr_mid * gr_end_point * gr_width [@@deriving sexp_of]
 
-type pad_type = Circle | Custom
+type gr_primitive = [ `gr_line of gr_line | `gr_arc of gr_arc ] [@@deriving sexp_of]
 
-let sexp_of_pad_type = function
-  | Circle -> Sexp.Atom "circle"
-  | Custom -> Sexp.Atom "custom"
+type pad_at = [ `at of float * float ] [@@deriving sexp_of]
+type pad_size = [ `size of float * float ] [@@deriving sexp_of]
+type pad_layers = [ `layers of string list ] [@@deriving sexp_of]
+type pad_options = [ `options of string list ] [@@deriving sexp_of] 
+type pad_primitives = [ `primitives of gr_primitive list ] [@@deriving sexp_of]
 
-type pad = {
-  name: string;
-  pad_type: pad_type;
-  at: kicad_point;
-  size: kicad_point;
-  layers: string list;
-  options: string list option;
-  primitives: kicad_primitive list option;
-} [@@deriving sexp_of]
+type pad_shape = [ `smd ] [@@deriving sexp_of]
+type pad_type = [ `circle | `custom ] [@@deriving sexp_of]
 
-type footprint = {
-  name: string;
-  version: int;
-  generator: string;
-  generator_version: string;
-  layer: string;
-  pads: pad list;
-} [@@deriving sexp_of]
+type kicad_pad = [ `pad of string * pad_shape * pad_type * pad_at * pad_size * pad_layers * pad_options * pad_primitives ] [@@deriving sexp_of]
 
-(* Convert millimeters to KiCad units and apply offset *)
-let mm_to_kicad_point ?(offset = {x = 0.0; y = 0.0}) (p : point) = 
-  { x = (p.x *. 1000.0) -. offset.x; y = (p.y *. 1000.0) -. offset.y }
+type kicad_footprint = [ `footprint of string * [ `version of int ] * [ `generator of string ] * [ `generator_version of string ] * [ `layer of string ] * kicad_pad list ] [@@deriving sexp_of]
 
 (* Convert spiral segments to KiCad primitives *)
 let segment_to_primitive width_mm offset segment =
   match segment with
   | Line { start; end_point } ->
-    GrLine {
-      start = mm_to_kicad_point ~offset start;
-      end_point = mm_to_kicad_point ~offset end_point;
-      width = width_mm;
-    }
+    `gr_line (
+      `start ((start.x *. 1000.0) -. offset.x, (start.y *. 1000.0) -. offset.y),
+      `gr_end ((end_point.x *. 1000.0) -. offset.x, (end_point.y *. 1000.0) -. offset.y),
+      `width width_mm
+    )
   | Arc { start; mid; end_point; _ } ->
-    GrArc {
-      start = mm_to_kicad_point ~offset start;
-      mid = mm_to_kicad_point ~offset mid;
-      end_point = mm_to_kicad_point ~offset end_point;
-      width = width_mm;
-    }
+    `gr_arc (
+      `start ((start.x *. 1000.0) -. offset.x, (start.y *. 1000.0) -. offset.y),
+      `mid ((mid.x *. 1000.0) -. offset.x, (mid.y *. 1000.0) -. offset.y),
+      `gr_end ((end_point.x *. 1000.0) -. offset.x, (end_point.y *. 1000.0) -. offset.y),
+      `width width_mm
+    )
 
 (* Generate KiCad primitives from spiral segments *)
 let generate_kicad_primitives shape track_width pitch turns is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
@@ -102,37 +86,40 @@ let generate_footprint output_channel shape width pitch turns is_inner =
   (* Generate primitives with coordinates relative to outer pad position *)
   let relative_primitives = generate_kicad_primitives shape width pitch turns is_inner ~offset:outer_pad_pos () in
   
-  (* Build footprint structure *)
-  let footprint = {
-    name = "SpiralCoil";
-    version = 20241229;
-    generator = "copper_trace";
-    generator_version = "1.0";
-    layer = "F.Cu";
-    pads = [
-      {
-        name = "1";
-        pad_type = Custom;
-        at = outer_pad_pos;
-        size = { x = pad_size; y = pad_size };
-        layers = ["F.Cu"];
-        options = Some ["(clearance outline)"; "(anchor circle)"];
-        primitives = Some relative_primitives;
-      };
-      {
-        name = "2";
-        pad_type = Circle;
-        at = inner_pad_pos;
-        size = { x = pad_size; y = pad_size };
-        layers = ["F.Cu"];
-        options = None;
-        primitives = None;
-      };
-    ];
-  } in
+  (* Build footprint structure using simplified types *)
+  let pad1 = `pad (
+    "1",
+    `smd,
+    `custom,
+    `at (outer_pad_pos.x, outer_pad_pos.y),
+    `size (pad_size, pad_size),
+    `layers ["F.Cu"],
+    `options ["(clearance outline)"; "(anchor circle)"],
+    `primitives relative_primitives
+  ) in
+           
+  let pad2 = `pad (
+    "2",
+    `smd,
+    `circle,
+    `at (inner_pad_pos.x, inner_pad_pos.y),
+    `size (pad_size, pad_size),
+    `layers ["F.Cu"],
+    `options [],
+    `primitives []
+  ) in
+  
+  let footprint = `footprint (
+    "SpiralCoil",
+    `version 20241229,
+    `generator "copper_trace",
+    `generator_version "1.0",
+    `layer "F.Cu",
+    [pad1; pad2]
+  ) in
   
   (* Convert to sexp and write *)
-  let sexp = sexp_of_footprint footprint in
+  let sexp = sexp_of_kicad_footprint footprint in
   let formatter = Format.formatter_of_out_channel output_channel in
   Sexp.pp_hum formatter sexp;
   Format.pp_print_newline formatter ();
