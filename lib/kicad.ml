@@ -250,7 +250,7 @@ let generate_kicad_primitives shape track_width pitch turns is_inner ?(offset = 
 
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel shape width pitch turns is_inner =
+let generate_footprint output_channel shape width pitch turns is_inner layers =
   let segments = generate_spiral_segments shape pitch turns is_inner in
   let pad_size = width *. 1000.0 in
   
@@ -313,7 +313,7 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     in
     let width_str = Printf.sprintf "T%.1f" (width *. 1000.0) in
     let pitch_str = Printf.sprintf "P%.1f" (pitch *. 1000.0) in
-    let layers_str = "S2" in  (* Always 2 layers for inner/outer spiral *)
+    let layers_str = Printf.sprintf "S%d" layers in
     Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
   in
   
@@ -329,7 +329,7 @@ let generate_footprint output_channel shape width pitch turns is_inner =
       | Rectangular { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
       | Oval { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
     in
-    let layers_str = "S2" in  (* Always 2 layers for inner/outer spiral *)
+    let layers_str = Printf.sprintf "S%d" layers in
     let width_hundredths = int_of_float (width *. 1000.0 *. 100.0) in  (* Convert to hundredths of mm *)
     let pitch_hundredths = int_of_float (pitch *. 1000.0 *. 100.0) in  (* Convert to hundredths of mm *)
     let turns_tenths = int_of_float (turns *. 10.0) in  (* Convert to tenths *)

@@ -202,6 +202,7 @@ let kicad_cmd =
     and+ pitch = pitch_arg
     and+ turns = turns_arg
     and+ is_inner = inner_diameter_flag
+    and+ layers = layers_arg
     and+ width = width_arg
     and+ output_file = output_arg
     in
@@ -215,7 +216,7 @@ let kicad_cmd =
         open_out output_file
     in
     
-    Kicad.generate_footprint output_channel shape width pitch turns is_inner;
+    Kicad.generate_footprint output_channel shape width pitch turns is_inner layers;
     
     (* Close file if it's not stdout *)
     if output_file <> "-" then
