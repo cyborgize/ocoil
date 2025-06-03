@@ -2,7 +2,7 @@
 
 (package
  (name copper_trace_lib)
- (depends ocaml dune))
+ (depends ocaml dune sexplib0 ppx_sexp_conv))
 
 (package
  (name copper_trace)
