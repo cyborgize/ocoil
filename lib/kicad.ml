@@ -297,7 +297,21 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
   } in
   
-  let mfr_property = `property ("MFR", "Coil_15x7_T0.5_P0.6_2SA"), {
+  (* Generate MFR field based on input parameters *)
+  let mfr_string = 
+    let shape_str = match shape with
+      | Round { diameter } -> Printf.sprintf "%.0fx%.0f" (diameter *. 1000.0) (diameter *. 1000.0)
+      | Square { size } -> Printf.sprintf "%.0fx%.0f" (size *. 1000.0) (size *. 1000.0)
+      | Rectangular { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+      | Oval { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+    in
+    let width_str = Printf.sprintf "T%.1f" (width *. 1000.0) in
+    let pitch_str = Printf.sprintf "P%.1f" (pitch *. 1000.0) in
+    let layers_str = "S2" in  (* Always 2 layers for inner/outer spiral *)
+    Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
+  in
+  
+  let mfr_property = `property ("MFR", mfr_string), {
     at = (0.0, 0.0);
     unlocked = None;
     layer = "F.Fab";
@@ -306,7 +320,22 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
   } in
   
-  let mfn_property = `property ("MFN", "157S2W50P60T050A"), {
+  (* Generate MFN field based on input parameters *)
+  let mfn_string = 
+    let dimensions_str = match shape with
+      | Round { diameter } -> Printf.sprintf "%.0f" (diameter *. 1000.0)
+      | Square { size } -> Printf.sprintf "%.0f" (size *. 1000.0)
+      | Rectangular { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+      | Oval { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+    in
+    let layers_str = "S2" in  (* Always 2 layers for inner/outer spiral *)
+    let width_hundredths = int_of_float (width *. 1000.0 *. 100.0) in  (* Convert to hundredths of mm *)
+    let pitch_hundredths = int_of_float (pitch *. 1000.0 *. 100.0) in  (* Convert to hundredths of mm *)
+    let turns_tenths = int_of_float (turns *. 10.0) in  (* Convert to tenths *)
+    Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
+  in
+  
+  let mfn_property = `property ("MFN", mfn_string), {
     at = (0.0, 0.0);
     unlocked = None;
     layer = "F.Fab";
