@@ -122,6 +122,16 @@ let output_arg =
   let doc = "Output file for KiCad footprint (default: stdout, use \"-\" for stdout)" in
   Arg.(value & opt string "-" & info ["o"; "output"] ~docv:"FILE" ~doc)
 
+(* Helper function to extract coil shape from command line arguments *)
+let get_coil_shape round_opt square_opt rectangle_opt oval_opt =
+  match round_opt, square_opt, rectangle_opt, oval_opt with
+  | Some diameter, None, None, None -> Coil.Round { diameter }
+  | None, Some size, None, None -> Coil.Square { size }
+  | None, None, Some (width, height), None -> Coil.Rectangular { width; height }
+  | None, None, None, Some (width, height) -> Coil.Oval { width; height }
+  | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
+  | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
+
 (* Trace subcommand *)
 let trace_cmd =
   let doc = "Calculate resistance of a copper trace by length" in
@@ -158,14 +168,7 @@ let coil_cmd =
     and+ thickness = thickness_arg
     and+ temperature = temperature_arg
     in
-    let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
-      | Some diameter, None, None, None -> Coil.Round { diameter }
-      | None, Some size, None, None -> Coil.Square { size }
-      | None, None, Some (width, height), None -> Coil.Rectangular { width; height }
-      | None, None, None, Some (width, height) -> Coil.Oval { width; height }
-      | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
-      | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
-    in
+    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
     let single_layer_length = Coil.calculate_spiral_length shape pitch turns is_inner in
     let total_length = single_layer_length *. (float_of_int layers) in
     let resistance = Trace.calculate_resistance total_length width thickness temperature in
@@ -202,14 +205,7 @@ let kicad_cmd =
     and+ width = width_arg
     and+ output_file = output_arg
     in
-    let shape = match round_opt, square_opt, rectangle_opt, oval_opt with
-      | Some diameter, None, None, None -> Coil.Round { diameter }
-      | None, Some size, None, None -> Coil.Square { size }
-      | None, None, Some (width, height), None -> Coil.Rectangular { width; height }
-      | None, None, None, Some (width, height) -> Coil.Oval { width; height }
-      | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
-      | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
-    in
+    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
     
     (* Determine output channel *)
     let output_channel = 
