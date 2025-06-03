@@ -139,7 +139,7 @@ let generate_oval_loop width height turn_number pitch is_inner =
             end_point = { x = arc_radius; y = straight_length }; 
             radius = arc_radius };
       Line { start = { x = arc_radius; y = straight_length }; 
-             end_point = { x = arc_radius; y = -.next_straight_length } };
+             end_point = { x = arc_radius; y = -.next_straight_length -. 0.5 *. pitch } };
       Arc { start = { x = arc_radius; y = -.next_straight_length -. 0.5 *. pitch }; 
             mid = { x = 0.5 *. pitch; y = -.straight_length -. arc_radius }; 
             end_point = { x = -.next_min_dim; y = -.next_straight_length -. 0.5 *. pitch }; 
