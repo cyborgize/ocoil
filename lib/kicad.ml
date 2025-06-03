@@ -196,6 +196,34 @@ type kicad_footprint = (
     ) pair
   ) pair [@@deriving sexp_of]
 
+(* Helper function to create a property *)
+let create_property name value ~uuid ?(at=(0.0, 0.0)) ?(unlocked=Some `yes) ?(layer="F.Fab") ?(hide=Some `yes) ?(font_size=(1.0, 1.0)) ?(font_thickness=0.15) () =
+  `property (name, value), {
+    at; unlocked; layer; hide; uuid;
+    effects = { font = { size = font_size; thickness = font_thickness }; };
+  }
+
+(* Helper function to create a pad *)
+let create_pad number pad_type pad_shape ~at ~size ~layers ~options ~primitives ~uuid =
+  `pad (number, pad_type, pad_shape), {
+    at; size; layers; options; primitives; uuid;
+  }
+
+(* Helper function to create a footprint rectangle *)
+let create_fp_rect ~start ~end_ ~stroke_width ~stroke_type ~fill ~layer ~uuid =
+  `fp_rect, {
+    start; end_;
+    stroke = { width = stroke_width; type_ = stroke_type; };
+    fill; layer; uuid;
+  }
+
+(* Helper function to create a footprint text *)
+let create_fp_text text_content ~at ~layer ~uuid ?(text_type=`user) ?(unlocked=Some `yes) ?(font_size=(1.0, 1.0)) ?(font_thickness=0.15) ?(justify=None) () =
+  `fp_text (text_type, text_content), {
+    at; unlocked; layer; uuid;
+    effects = { font = { size = font_size; thickness = font_thickness }; justify; };
+  }
+
 (* Convert spiral segments to KiCad primitives *)
 let segment_to_primitive width_mm offset segment =
   match segment with
@@ -241,61 +269,39 @@ let generate_footprint output_channel shape width pitch turns is_inner =
   (* Generate primitives with coordinates relative to outer pad position *)
   let relative_primitives = generate_kicad_primitives shape width pitch turns is_inner ~offset:outer_pad_pos () in
   
-  (* Build footprint structure using record types *)
-  let pad1 = `pad ("1", `smd, `custom), {
-    at = (outer_pad_pos.x, outer_pad_pos.y);
-    size = (pad_size, pad_size);
-    layers = ["F.Cu"];
-    options = Some { clearance = `outline; anchor = `circle; };
-    primitives = relative_primitives;
-    uuid = "14a21f80-a77f-4136-92e0-923221b0e518";
-  } in
+  (* Build footprint structure using helper functions *)
+  let pad1 = create_pad "1" `smd `custom
+    ~at:(outer_pad_pos.x, outer_pad_pos.y)
+    ~size:(pad_size, pad_size)
+    ~layers:["F.Cu"]
+    ~options:(Some { clearance = `outline; anchor = `circle; })
+    ~primitives:relative_primitives
+    ~uuid:"14a21f80-a77f-4136-92e0-923221b0e518" in
            
-  let pad2 = `pad ("2", `smd, `circle), {
-    at = (inner_pad_pos.x, inner_pad_pos.y);
-    size = (pad_size, pad_size);
-    layers = ["F.Cu"];
-    options = None;
-    primitives = [];
-    uuid = "51855533-01a7-4cb4-87b1-27ff621360b1";
-  } in
+  let pad2 = create_pad "2" `smd `circle
+    ~at:(inner_pad_pos.x, inner_pad_pos.y)
+    ~size:(pad_size, pad_size)
+    ~layers:["F.Cu"]
+    ~options:None
+    ~primitives:[]
+    ~uuid:"51855533-01a7-4cb4-87b1-27ff621360b1" in
   
-  (* Create properties *)
-  let ref_property = `property ("Reference", "L**"), {
-    at = (0.0, -0.5);
-    unlocked = Some `yes;
-    layer = "F.SilkS";
-    hide = Some `yes;
-    uuid = "c53f67d9-d280-48cc-b065-55df925e8d56";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.1 }; };
-  } in
+  (* Create properties using helper functions *)
+  let ref_property = create_property "Reference" "L**"
+    ~uuid:"c53f67d9-d280-48cc-b065-55df925e8d56"
+    ~at:(0.0, -0.5)
+    ~layer:"F.SilkS"
+    ~font_thickness:0.1 () in
   
-  let value_property = `property ("Value", "Val**"), {
-    at = (0.0, 1.0);
-    unlocked = Some `yes;
-    layer = "F.Fab";
-    hide = Some `yes;
-    uuid = "dcb50d06-6893-4b51-a6f1-3a9e9428cb83";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
-  } in
+  let value_property = create_property "Value" "Val**"
+    ~uuid:"dcb50d06-6893-4b51-a6f1-3a9e9428cb83"
+    ~at:(0.0, 1.0) () in
   
-  let datasheet_property = `property ("Datasheet", ""), {
-    at = (0.0, 0.0);
-    unlocked = Some `yes;
-    layer = "F.Fab";
-    hide = Some `yes;
-    uuid = "cf551db9-fc86-4936-b027-051c526e4bcd";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
-  } in
+  let datasheet_property = create_property "Datasheet" ""
+    ~uuid:"cf551db9-fc86-4936-b027-051c526e4bcd" () in
   
-  let description_property = `property ("Description", ""), {
-    at = (0.0, 0.0);
-    unlocked = Some `yes;
-    layer = "F.Fab";
-    hide = Some `yes;
-    uuid = "184cda2b-7a4b-4003-af2a-58ca378cc9de";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
-  } in
+  let description_property = create_property "Description" ""
+    ~uuid:"184cda2b-7a4b-4003-af2a-58ca378cc9de" () in
   
   (* Generate MFR field based on input parameters *)
   let mfr_string = 
@@ -311,14 +317,9 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
   in
   
-  let mfr_property = `property ("MFR", mfr_string), {
-    at = (0.0, 0.0);
-    unlocked = None;
-    layer = "F.Fab";
-    hide = Some `yes;
-    uuid = "3826364c-19d9-4f33-a074-aa49377a9ce9";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
-  } in
+  let mfr_property = create_property "MFR" mfr_string
+    ~uuid:"3826364c-19d9-4f33-a074-aa49377a9ce9"
+    ~unlocked:None () in
   
   (* Generate MFN field based on input parameters *)
   let mfn_string = 
@@ -335,49 +336,39 @@ let generate_footprint output_channel shape width pitch turns is_inner =
     Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
   in
   
-  let mfn_property = `property ("MFN", mfn_string), {
-    at = (0.0, 0.0);
-    unlocked = None;
-    layer = "F.Fab";
-    hide = None;
-    uuid = "4554da17-05d2-4bc7-9de7-a5e9cf606005";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; };
-  } in
+  let mfn_property = create_property "MFN" mfn_string
+    ~uuid:"4554da17-05d2-4bc7-9de7-a5e9cf606005"
+    ~unlocked:None
+    ~hide:None () in
   
   (* Create footprint rectangle *)
-  let fp_rectangle = `fp_rect, {
-    start = (-7.5, -3.5);
-    end_ = (7.5, 3.5);
-    stroke = { width = 0.1; type_ = `solid; };
-    fill = `no;
-    layer = "F.SilkS";
-    uuid = "b55377dc-9f66-4417-90d6-e165a7b32bc3";
-  } in
+  let fp_rectangle = create_fp_rect
+    ~start:(-7.5, -3.5)
+    ~end_:(7.5, 3.5)
+    ~stroke_width:0.1
+    ~stroke_type:`solid
+    ~fill:`no
+    ~layer:"F.SilkS"
+    ~uuid:"b55377dc-9f66-4417-90d6-e165a7b32bc3" in
   
   (* Create footprint texts *)
-  let mfn_text = `fp_text (`user, "${MFN}"), {
-    at = (0.0, 0.0, 0.0);
-    unlocked = Some `yes;
-    layer = "F.SilkS";
-    uuid = "222182e3-a584-4cc6-a41b-c064499fe8b3";
-    effects = { font = { size = (0.9, 0.9); thickness = 0.1 }; justify = None; };
-  } in
+  let mfn_text = create_fp_text "${MFN}"
+    ~at:(0.0, 0.0, 0.0)
+    ~layer:"F.SilkS"
+    ~uuid:"222182e3-a584-4cc6-a41b-c064499fe8b3"
+    ~font_size:(0.9, 0.9)
+    ~font_thickness:0.1 () in
   
-  let ref_text_back = `fp_text (`user, "${REFERENCE}"), {
-    at = (0.0, -2.2125, 180.0);
-    unlocked = Some `yes;
-    layer = "B.Fab";
-    uuid = "424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; justify = Some `mirror; };
-  } in
+  let ref_text_back = create_fp_text "${REFERENCE}"
+    ~at:(0.0, -2.2125, 180.0)
+    ~layer:"B.Fab"
+    ~uuid:"424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5"
+    ~justify:(Some `mirror) () in
   
-  let ref_text_front = `fp_text (`user, "${REFERENCE}"), {
-    at = (0.0, 2.4875, 0.0);
-    unlocked = Some `yes;
-    layer = "F.Fab";
-    uuid = "0439e334-26b8-4223-ace8-f721b97f5b67";
-    effects = { font = { size = (1.0, 1.0); thickness = 0.15 }; justify = None; };
-  } in
+  let ref_text_front = create_fp_text "${REFERENCE}"
+    ~at:(0.0, 2.4875, 0.0)
+    ~layer:"F.Fab"
+    ~uuid:"0439e334-26b8-4223-ace8-f721b97f5b67" () in
   
   let footprint =
     `footprint "SpiralCoil",
