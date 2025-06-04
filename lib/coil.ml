@@ -134,7 +134,33 @@ let generate_rectangular_loop width height turn_number pitch is_inner _is_last =
       { start = { x = -.current_half_w; y = -.current_half_h }; end_point = { x = next_half_w; y = -.current_half_h } };
   ]
 
-let generate_oval_loop width height turn_number pitch is_inner is_last =
+(* Transformation matrix type: 2x2 matrix as (a, b, c, d) where:
+   [a b] [x]   [a*x + b*y]
+   [c d] [y] = [c*x + d*y]
+*)
+type transform_matrix = float * float * float * float
+
+(* Apply transformation to a point using matrix multiplication *)
+let transform_point (a, b, c, d) point = { x = (a *. point.x) +. (b *. point.y); y = (c *. point.x) +. (d *. point.y) }
+
+(* Apply transformation to a list of path segments *)
+let transform_segments transform segments =
+  List.map
+    (function
+      | Line { start; end_point } ->
+        Line { start = transform_point transform start; end_point = transform_point transform end_point }
+      | Arc { start; mid; end_point; radius } ->
+        Arc
+          {
+            start = transform_point transform start;
+            mid = transform_point transform mid;
+            end_point = transform_point transform end_point;
+            radius;
+          })
+    segments
+
+(* Always assumes horizontal oval (width >= height) *)
+let generate_oval_loop' width height turn_number pitch is_inner is_last =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
@@ -142,96 +168,78 @@ let generate_oval_loop width height turn_number pitch is_inner is_last =
   let next_half_h = op (height *. 0.5) (pitch *. (turn_number +. 1.0)) in
   let min_dim = min current_half_w current_half_h in
   let next_min_dim = min next_half_w next_half_h in
-  let is_horizontal = width >= height in
 
-  if is_horizontal then (
-    let straight_length = current_half_w -. min_dim in
-    let next_straight_length = next_half_w -. next_min_dim in
-    let arc_radius = min_dim in
-    let tail =
-      match is_last with
-      | true ->
-        let clearance = 0.00015 in
-        let trace_width = 0.0005 in
-        let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
-        let arc_radius' = arc_radius +. arc_clearance in
-        [
-          Line
-            {
-              start = { x = straight_length; y = arc_radius };
-              end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
-            };
-          Arc
-            {
-              start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
-              mid =
-                {
-                  x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0);
-                  y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
-                };
-              end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
-              radius = arc_radius';
-            };
-        ]
-      | false ->
-        [
-          Line
-            {
-              start = { x = straight_length; y = arc_radius };
-              end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
-            };
-          Arc
-            {
-              start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
-              mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch };
-              end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_min_dim };
-              radius = arc_radius;
-            };
-        ]
-    in
-    Line
-      {
-        start = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
-        end_point = { x = straight_length; y = -.arc_radius };
-      }
-    :: Arc
-         {
-           start = { x = straight_length; y = -.arc_radius };
-           mid = { x = straight_length +. arc_radius; y = 0.0 };
-           end_point = { x = straight_length; y = arc_radius };
-           radius = arc_radius;
-         }
-    :: tail)
-  else (
-    let straight_length = current_half_h -. min_dim in
-    let next_straight_length = next_half_h -. next_min_dim in
-    let arc_radius = min_dim in
-    [
-      Line
-        {
-          start = { x = -.arc_radius; y = -.straight_length -. (0.5 *. pitch) };
-          end_point = { x = -.arc_radius; y = straight_length };
-        };
-      Arc
-        {
-          start = { x = -.arc_radius; y = straight_length };
-          mid = { x = 0.0; y = straight_length +. arc_radius };
-          end_point = { x = arc_radius; y = straight_length };
-          radius = arc_radius;
-        };
-      Line
-        {
-          start = { x = arc_radius; y = straight_length };
-          end_point = { x = arc_radius; y = -.next_straight_length -. (0.5 *. pitch) };
-        };
-      Arc
-        {
-          start = { x = arc_radius; y = -.next_straight_length -. (0.5 *. pitch) };
-          mid = { x = 0.5 *. pitch; y = -.straight_length -. arc_radius };
-          end_point = { x = -.next_min_dim; y = -.next_straight_length -. (0.5 *. pitch) };
-          radius = arc_radius;
-        };
-    ])
+  let straight_length = current_half_w -. min_dim in
+  let next_straight_length = next_half_w -. next_min_dim in
+  let arc_radius = min_dim in
+  let tail =
+    match is_last with
+    | true ->
+      let clearance = 0.00015 in
+      let trace_width = 0.0005 in
+      let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
+      let arc_radius' = arc_radius +. arc_clearance in
+      [
+        Line
+          {
+            start = { x = straight_length; y = arc_radius };
+            end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+          };
+        Arc
+          {
+            start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+            mid =
+              {
+                x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0);
+                y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+              };
+            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
+            radius = arc_radius';
+          };
+      ]
+    | false ->
+      [
+        Line
+          {
+            start = { x = straight_length; y = arc_radius };
+            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
+          };
+        Arc
+          {
+            start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
+            mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch };
+            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_min_dim };
+            radius = arc_radius;
+          };
+      ]
+  in
+  Line
+    {
+      start = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
+      end_point = { x = straight_length; y = -.arc_radius };
+    }
+  :: Arc
+       {
+         start = { x = straight_length; y = -.arc_radius };
+         mid = { x = straight_length +. arc_radius; y = 0.0 };
+         end_point = { x = straight_length; y = arc_radius };
+         radius = arc_radius;
+       }
+  :: tail
+
+let generate_oval_loop width height turn_number pitch is_inner is_last =
+  let is_horizontal = width >= height in
+  let segments =
+    if is_horizontal then
+      (* Use original dimensions for horizontal oval *)
+      generate_oval_loop' width height turn_number pitch is_inner is_last
+    else (
+      (* For vertical oval, generate as horizontal with swapped dimensions, then transform *)
+      let horizontal_segments = generate_oval_loop' height width turn_number pitch is_inner is_last in
+      (* Transform: swap X and Y coordinates using matrix [0 1; 1 0] *)
+      transform_segments (0.0, 1.0, 1.0, 0.0) horizontal_segments)
+  in
+  segments
 
 let generate_spiral_segments shape pitch turns is_inner =
   let loop_generator =
