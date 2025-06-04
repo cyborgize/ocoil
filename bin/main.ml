@@ -52,12 +52,14 @@ let parse_length_width s =
       Ok (value *. 1e-3)
     with Failure _ -> Error (`Msg "Invalid length/width format. Use: <value>mm, <value>mil, or <value> (mm default)"))
 
-let length_width_converter = Arg.conv (parse_length_width, fun ppf w -> Format.fprintf ppf "%.6e" w)
+let dimension_converter = Arg.conv (parse_length_width, fun ppf w -> Format.fprintf ppf "%.6e" w)
+
+let via_size_converter = Arg.pair ~sep:'/' dimension_converter dimension_converter
 
 (* Common cmdliner argument definitions *)
 let width_arg =
   let doc = "Width of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default). Default: 1mm" in
-  Arg.(value & opt length_width_converter 1e-3 & info [ "w"; "width" ] ~docv:"WIDTH" ~doc)
+  Arg.(value & opt dimension_converter 1e-3 & info [ "w"; "width" ] ~docv:"WIDTH" ~doc)
 
 let thickness_arg =
   let doc =
@@ -73,12 +75,12 @@ let temperature_arg =
 (* Trace subcommand arguments *)
 let trace_length_arg =
   let doc = "Length of the copper trace. Formats: <value>mm, <value>mil, or <value> (mm default)" in
-  Arg.(required & pos 0 (some length_width_converter) None & info [] ~docv:"LENGTH" ~doc)
+  Arg.(required & pos 0 (some dimension_converter) None & info [] ~docv:"LENGTH" ~doc)
 
 (* Coil subcommand arguments *)
 let pitch_arg =
   let doc = "Pitch between turns. Formats: <value>mm, <value>mil, or <value> (mm default)" in
-  Arg.(required & opt (some length_width_converter) None & info [ "p"; "pitch" ] ~docv:"PITCH" ~doc)
+  Arg.(required & opt (some dimension_converter) None & info [ "p"; "pitch" ] ~docv:"PITCH" ~doc)
 
 let turns_arg =
   let doc = "Number of turns (can be non-integer, e.g., 2.5)" in
@@ -90,8 +92,8 @@ let inner_diameter_flag =
 
 let round_converter = Arg.conv (parse_length_width, fun ppf d -> Format.fprintf ppf "%.6e" d)
 let square_converter = Arg.conv (parse_length_width, fun ppf s -> Format.fprintf ppf "%.6e" s)
-let rectangle_converter = Arg.pair ~sep:'x' length_width_converter length_width_converter
-let oval_converter = Arg.pair ~sep:'x' length_width_converter length_width_converter
+let rectangle_converter = Arg.pair ~sep:'x' dimension_converter dimension_converter
+let oval_converter = Arg.pair ~sep:'x' dimension_converter dimension_converter
 
 let round_arg =
   let doc = "Round coil with specified diameter. Formats: <value>mm, <value>mil, or <value> (mm default)" in
@@ -118,7 +120,14 @@ let clearance_arg =
     "Trace clearance (spacing between adjacent traces). Formats: <value>mm, <value>mil, or <value> (mm default). \
      Default: 0.1mm"
   in
-  Arg.(value & opt length_width_converter 1e-4 & info [ "c"; "clearance" ] ~docv:"CLEARANCE" ~doc)
+  Arg.(value & opt dimension_converter 1e-4 & info [ "c"; "clearance" ] ~docv:"CLEARANCE" ~doc)
+
+let via_size_arg =
+  let doc =
+    "Via size as copper/drill. Formats: <value>mm, <value>mil, or <value> (mm default). Example: '0.3/0.15' or \
+     '12mil/6mil'. Default: 0.5/0.25"
+  in
+  Arg.(value & opt via_size_converter (0.5e-3, 0.25e-3) & info [ "via-size" ] ~docv:"COPPER/DRILL" ~doc)
 
 let output_arg =
   let doc = "Output file for KiCad footprint (default: stdout, use \"-\" for stdout)" in
@@ -207,13 +216,14 @@ let kicad_cmd =
     and+ layers = layers_arg
     and+ width = width_arg
     and+ clearance = clearance_arg
+    and+ via_size = via_size_arg
     and+ output_file = output_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
 
     (* Determine output channel *)
     let output_channel = if output_file = "-" then stdout else open_out output_file in
 
-    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance;
+    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size;
 
     (* Close file if it's not stdout *)
     if output_file <> "-" then close_out output_channel

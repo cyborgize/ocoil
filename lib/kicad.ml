@@ -396,7 +396,7 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance =
+let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
   let rand_state = Random.State.make_self_init () in
   let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance ~layers in
   let pad_size = width *. 1000.0 in
@@ -462,9 +462,12 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           in
           let via_pos = end_point.x *. 1000.0, end_point.y *. 1000.0 in
           let via_number = Printf.sprintf "V%d" layer_index in
+          let copper_size, drill_size = via_size in
+          let copper_size_mm = copper_size *. 1000.0 in
+          let drill_size_mm = drill_size *. 1000.0 in
           Some
-            (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(0.3, 0.3) ~drill:0.15
-               ~uuid:(generate_uuid rand_state) ()))
+            (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(copper_size_mm, copper_size_mm)
+               ~drill:drill_size_mm ~uuid:(generate_uuid rand_state) ()))
         else None)
       segments
   in
