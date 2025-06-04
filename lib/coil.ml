@@ -147,6 +147,7 @@ let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_l
 type transform_matrix = float * float * float * float
 
 (* Predefined transformation matrices *)
+let identity = 1.0, 0.0, 0.0, 1.0 (* Identity matrix (no transformation) *)
 let mirror_x_axis = 1.0, 0.0, 0.0, -1.0 (* Mirror across X axis (flip Y coordinates) *)
 let mirror_y_axis = -1.0, 0.0, 0.0, 1.0 (* Mirror across Y axis (flip X coordinates) *)
 let swap_xy = 0.0, 1.0, 1.0, 0.0 (* Swap X and Y coordinates *)
@@ -170,19 +171,17 @@ let transform_segments transform segments =
           })
     segments
 
-(* Always assumes horizontal oval (width >= height) *)
-let generate_oval_loop' ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance =
+(* Always assumes horizontal oval (main_dim >= across_dim) *)
+let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance =
   let op = if is_inner then ( +. ) else ( -. ) in
-  let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
-  let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
-  let next_half_w = op (width *. 0.5) (pitch *. (turn_number +. 1.0)) in
-  let next_half_h = op (height *. 0.5) (pitch *. (turn_number +. 1.0)) in
-  let min_dim = min current_half_w current_half_h in
-  let next_min_dim = min next_half_w next_half_h in
+  let current_half_main = op (main_dim *. 0.5) (pitch *. turn_number) in
+  let current_half_across = op (across_dim *. 0.5) (pitch *. turn_number) in
+  let next_half_main = op (main_dim *. 0.5) (pitch *. (turn_number +. 1.0)) in
+  let next_half_across = op (across_dim *. 0.5) (pitch *. (turn_number +. 1.0)) in
 
-  let straight_length = current_half_w -. min_dim in
-  let next_straight_length = next_half_w -. next_min_dim in
-  let arc_radius = min_dim in
+  let straight_length = current_half_main -. current_half_across in
+  let next_straight_length = next_half_main -. next_half_across in
+  let arc_radius = current_half_across in
   let tail =
     match is_last with
     | true ->
@@ -228,7 +227,7 @@ let generate_oval_loop' ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~t
           {
             start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
             mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch };
-            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_min_dim };
+            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across };
             radius = arc_radius;
           };
       ]
@@ -248,20 +247,18 @@ let generate_oval_loop' ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~t
   :: tail
 
 let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance =
-  let is_horizontal = width >= height in
-  let segments =
-    if is_horizontal then
-      (* Use original dimensions for horizontal oval *)
-      generate_oval_loop' ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
-    else (
-      (* For vertical oval, generate as horizontal with swapped dimensions, then transform *)
-      let horizontal_segments =
-        generate_oval_loop' ~width:height ~height:width ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
-      in
-      (* Transform: swap X and Y coordinates *)
-      transform_segments swap_xy horizontal_segments)
+  let main_dim, across_dim, transformation =
+    if width >= height then
+      (* Horizontal oval: no transformation needed *)
+      width, height, identity
+    else
+      (* Vertical oval: swap dimensions and apply coordinate transformation *)
+      height, width, swap_xy
   in
-  segments
+  let segments =
+    generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
+  in
+  transform_segments transformation segments
 
 let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index =
   let loop_generator turn_number is_last =
@@ -283,17 +280,16 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
   in
   let segments = List.concat all_loops in
 
-  (* Mirror segments across the shorter dimension for odd layers *)
-  if layer_index mod 2 = 1 then (
-    let mirror_transform =
+  let transformation =
+    if layer_index mod 2 = 1 then (
+      (* Mirror segments across the shorter dimension for odd layers *)
       match shape with
-      | Round _ -> mirror_x_axis
-      | Square _ -> mirror_x_axis
-      | Rectangular { width; height } -> if width < height then mirror_y_axis else mirror_x_axis
-      | Oval { width; height } -> if width < height then mirror_y_axis else mirror_x_axis
-    in
-    transform_segments mirror_transform segments)
-  else segments
+      | Round _ | Square _ -> mirror_x_axis
+      | Rectangular { width; height } | Oval { width; height } ->
+        if width < height then mirror_y_axis else mirror_x_axis)
+    else identity
+  in
+  transform_segments transformation segments
 
 (* Calculate the last point coordinates for a coil layer *)
 let calculate_last_point ~shape ~pitch ~turns =
