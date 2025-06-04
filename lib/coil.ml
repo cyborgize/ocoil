@@ -271,20 +271,3 @@ let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~cleara
       loop_generator (float_of_int i) is_last)
   in
   List.concat all_loops
-
-let generate_spiral_path ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance =
-  let all_segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance in
-
-  (* Extract points from segments for compatibility with existing KiCad code *)
-  let extract_points segments =
-    List.fold_left
-      (fun acc segment ->
-        match segment with
-        | Line { start; end_point } -> start :: end_point :: acc
-        | Arc { start; end_point; _ } -> start :: end_point :: acc)
-      [] segments
-    |> List.rev
-    |> Array.of_list
-  in
-
-  extract_points all_segments
