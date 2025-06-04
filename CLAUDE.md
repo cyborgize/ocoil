@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This directory contains an OCaml command-line tool for calculating the electrical resistance of copper traces, designed for PCB (Printed Circuit Board) design calculations. The tool accounts for temperature effects and supports multiple unit formats commonly used in electronics engineering.
+This OCaml project provides a command-line tool for PCB design calculations with three main functions:
+1. **Trace resistance calculation** - Calculate electrical resistance of copper traces with temperature compensation
+2. **Spiral coil resistance calculation** - Calculate total resistance of multi-turn spiral coils
+3. **KiCad footprint generation** - Generate .kicad_mod files for multi-layer spiral coil footprints
 
 ## Build and Development Commands
 
@@ -13,68 +16,85 @@ This directory contains an OCaml command-line tool for calculating the electrica
 dune build
 ```
 
-### Running the tool
+### Running Commands
 ```bash
-dune exec ./main.exe -- <length> [options]
+# Trace resistance calculation
+dune exec -- bin/main.exe trace 0.01 -w 0.5mm -t 2oz --temp 85
+
+# Spiral coil resistance calculation  
+dune exec -- bin/main.exe coil --pitch 0.6 --turns 2.5 --width 0.2 --round 6
+
+# KiCad footprint generation
+dune exec -- bin/main.exe kicad --pitch 0.64 --width 0.5 --clearance 0.14 --turns 5 --layers 3 --oval 13.9x6.22 --via-size 0.3/0.15 --output coil.kicad_mod
 ```
 
-### Examples
+### Testing
+Use the provided shell scripts for testing:
 ```bash
-# Basic usage with 10mm trace length
-dune exec ./main.exe -- 0.01
-
-# Custom width and thickness with units
-dune exec ./main.exe -- 0.01 -w 0.5mm -t 2oz
-
-# High temperature calculation
-dune exec ./main.exe -- 0.01 --temp 85
-
-# Using mil (thousandths of inch) for width
-dune exec ./main.exe -- 0.01 -w 20mil
+./make.sh      # Generate example KiCad footprint
+./test.sh      # Run basic functionality tests
 ```
 
 ## Code Architecture
 
-### Core Components
+### Multi-Command Structure
+The tool uses cmdliner to provide three subcommands (`trace`, `coil`, `kicad`) from a single executable in `bin/main.ml`. Each subcommand has distinct argument parsing and delegates to library functions.
 
-**main.ml** - Single file containing the complete application with these key sections:
+### Library Organization (`lib/`)
 
-1. **Physical Constants**: Copper resistivity at 20°C, temperature coefficient, and density
-2. **Unit Conversion Functions**: 
-   - `oz_per_sqm_to_meters` - Converts copper weight (oz/m²) to thickness in meters
-   - `mil_to_meters` - Converts mils to meters (1 mil = 25.4 μm)
-3. **Custom Cmdliner Converters**:
-   - `thickness_converter` - Parses thickness with units: mm, um, oz, or bare numbers (oz default)
-   - `width_converter` - Parses width with units: mm, mil, or bare numbers (mm default)
-4. **Resistance Calculation**:
-   - `calculate_resistivity_at_temp` - Applies temperature compensation using linear coefficient
-   - `calculate_resistance` - Core R = ρL/A calculation
+**trace.ml** - Core physics calculations:
+- Copper resistivity constants and temperature coefficients
+- `calculate_resistance` - Implements R = ρL/A with temperature compensation
+- Unit conversion utilities for PCB industry standards (oz/ft², mils)
 
-### Dependencies
+**coil.ml** - Spiral coil geometry and generation:
+- `coil_shape` sum type supporting Round, Square, Rectangular, and Oval geometries
+- `generate_spiral_segments` - Creates path segments for multi-layer coils with automatic layer mirroring
+- Transformation matrices for coordinate mirroring and rotation
+- Layer-aware segment generation with `layer_segments` grouping
 
-- **OCaml** - Programming language
-- **Dune** - Build system
-- **Cmdliner** - Command-line argument parsing with type safety
+**kicad.ml** - KiCad footprint serialization:
+- S-expression generation using sexplib0 with custom formatting functions
+- Complete KiCad footprint type system including pads, primitives, and metadata
+- `generate_footprint` - Converts coil segments to .kicad_mod format
+- Automatic via generation for even-numbered layers with configurable sizes
+- Layer assignment logic for multi-layer PCBs (F.Cu, In1.Cu, In2.Cu, In3.Cu, In4.Cu, B.Cu)
 
-### Key Design Decisions
+### Key Design Patterns
 
-- Uses only OCaml Stdlib (no Base library)
-- Custom cmdliner converters provide intuitive unit parsing for PCB designers
-- Temperature compensation uses standard copper temperature coefficient (0.393%/°C)
-- Defaults chosen for common PCB scenarios: 1oz copper thickness, 1mm width, 25°C temperature
+**Dimension Parsing**: The `dimension_converter` in main.ml handles multiple unit formats (mm, mil, oz, um) with intelligent defaults, used across all subcommands for consistent UX.
 
-## Unit Formats
+**Multi-Layer Coil Architecture**: 
+- Coils are generated per-layer with `generate_spiral_segments_layer`
+- Even layers (0, 2, 4...) get automatic via generation at segment endpoints
+- Odd layers get coordinate mirroring for optimal routing
+- Layer assignment follows PCB industry conventions
 
-### Thickness
-- `35um` or `0.035mm` - Micrometers or millimeters  
-- `1oz` or `2oz` - Copper weight in ounces per square meter
-- `1.5` - Bare number defaults to oz
+**Footprint Generation Pipeline**:
+1. Generate geometric path segments for each layer
+2. Convert segments to KiCad primitives (fp_line, fp_arc)
+3. Add pads, vias, properties, and metadata
+4. Serialize to S-expression format with custom formatting
 
-### Width  
-- `0.5mm` - Millimeters
-- `20mil` - Mils (thousandths of an inch)
-- `1.2` - Bare number defaults to mm
+## Dependencies
 
-### Temperature
-- Always in degrees Celsius
-- Accounts for copper's positive temperature coefficient
+- **OCaml + Dune** - Core build system
+- **Cmdliner** - Type-safe command-line parsing
+- **sexplib0 + ppx_sexp_conv** - S-expression serialization for KiCad format
+- **Uuidm** - UUID generation for KiCad components
+
+## Unit Format Support
+
+All dimensional inputs support flexible unit parsing:
+
+**Length/Width**: `0.5mm`, `20mil`, `1.2` (mm default)
+**Thickness**: `35um`, `1oz`, `2oz` (oz default)  
+**Via Sizes**: `0.3/0.15`, `12mil/6mil`, `0.4mm/8mil` (copper/drill format)
+
+## Multi-Layer Coil Features
+
+- Supports 1-6 layer coils with automatic layer assignment
+- Even layers get thru-hole vias for inter-layer connections
+- Odd layers use coordinate mirroring for routing optimization
+- Configurable via sizes with separate copper and drill specifications
+- Automatic trace clearance and pitch calculations
