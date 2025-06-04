@@ -266,14 +266,14 @@ let segment_to_primitive width_mm offset segment =
       }
 
 (* Generate KiCad primitives from spiral segments *)
-let generate_kicad_primitives shape track_width pitch turns is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
+let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
   let width_mm = track_width *. 1000.0 in
-  let segments = generate_spiral_segments shape pitch turns is_inner track_width in
+  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:track_width in
   List.map (segment_to_primitive width_mm offset) segments
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel shape width pitch turns is_inner layers =
-  let segments = generate_spiral_segments shape pitch turns is_inner width in
+let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers =
+  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width in
   let pad_size = width *. 1000.0 in
 
   (* Calculate pad positions from first and last segments *)
@@ -291,7 +291,9 @@ let generate_footprint output_channel shape width pitch turns is_inner layers =
   let inner_pad_pos = { x = end_point.x *. 1000.0; y = end_point.y *. 1000.0 } in
 
   (* Generate primitives with coordinates relative to outer pad position *)
-  let relative_primitives = generate_kicad_primitives shape width pitch turns is_inner ~offset:outer_pad_pos () in
+  let relative_primitives =
+    generate_kicad_primitives ~shape ~track_width:width ~pitch ~turns ~is_inner ~offset:outer_pad_pos ()
+  in
 
   (* Build footprint structure using helper functions *)
   let pad1 =

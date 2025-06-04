@@ -162,7 +162,7 @@ let coil_cmd =
     and+ thickness = thickness_arg
     and+ temperature = temperature_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
-    let single_layer_length = Coil.calculate_spiral_length shape pitch turns is_inner in
+    let single_layer_length = Coil.calculate_spiral_length ~shape ~pitch ~turns ~is_inner in
     let total_length = single_layer_length *. float_of_int layers in
     let resistance = Trace.calculate_resistance total_length width thickness temperature in
     Printf.printf "Spiral coil resistance: %.6f Ohms\n" resistance;
@@ -205,7 +205,7 @@ let kicad_cmd =
     (* Determine output channel *)
     let output_channel = if output_file = "-" then stdout else open_out output_file in
 
-    Kicad.generate_footprint output_channel shape width pitch turns is_inner layers;
+    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers;
 
     (* Close file if it's not stdout *)
     if output_file <> "-" then close_out output_channel
