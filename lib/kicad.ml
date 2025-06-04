@@ -98,6 +98,23 @@ let sexp_of_layer = function
 (* Helper function to generate UUID strings *)
 let generate_uuid rand_state = Uuid.to_string (Uuid.v4_gen rand_state ())
 
+(* Array of PCB layers from front to back *)
+let pcb_layers = [| F_Cu; In1_Cu; In2_Cu; In3_Cu; In4_Cu; B_Cu |]
+
+(* Assign PCB layer based on layer index and total number of layers *)
+let assign_coil_layer layer_index total_layers =
+  if total_layers = 1 then
+    (* Single layer always uses F_Cu *)
+    F_Cu
+  else if layer_index = total_layers - 1 then
+    (* Last layer uses B_Cu for multi-layer coils *)
+    pcb_layers.(Array.length pcb_layers - 1)
+  else if
+    (* Use layer by index, defaulting to F_Cu if out of bounds *)
+    layer_index >= 0 && layer_index < Array.length pcb_layers
+  then pcb_layers.(layer_index)
+  else F_Cu
+
 type gr_coord = float * float [@@deriving sexp_of]
 
 type gr_line' = {
@@ -364,26 +381,20 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
          ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
-(* Generate KiCad primitives from spiral segments *)
-let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ~clearance ?(offset = { x = 0.0; y = 0.0 }) ()
-    =
-  let width_mm = track_width *. 1000.0 in
-  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:track_width ~clearance in
-  List.map (segment_to_primitive width_mm offset) segments
-
 (* Generate footprint structure and write to channel *)
 let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance =
   let rand_state = Random.State.make_self_init () in
-  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance in
+  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance ~layers in
   let pad_size = width *. 1000.0 in
 
   (* Calculate pad positions from first and last segments *)
+  let all_segments = List.concat_map (fun layer -> layer.segments) segments in
   let start_point =
-    match List.hd segments with
+    match List.hd all_segments with
     | Line { start; _ } | Arc { start; _ } -> start
   in
   let end_point =
-    match List.rev segments |> List.hd with
+    match List.rev all_segments |> List.hd with
     | Line { end_point; _ } | Arc { end_point; _ } -> end_point
   in
 
@@ -393,7 +404,13 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
 
   (* Generate coil segments as footprint primitives *)
   let width_mm = width *. 1000.0 in
-  let coil_primitives = List.map (segment_to_footprint_primitive rand_state width_mm F_Cu) segments in
+  let coil_primitives =
+    List.concat_map
+      (fun { Coil.layer_index; segments } ->
+        let layer = assign_coil_layer layer_index layers in
+        List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
+      segments
+  in
 
   (* Separate lines and arcs *)
   let coil_lines, coil_arcs =

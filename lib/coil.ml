@@ -27,6 +27,11 @@ type path_segment =
       radius : float;
     }
 
+type layer_segments = {
+  layer_index : int;
+  segments : path_segment list;
+}
+
 let calculate_spiral_length ~shape ~pitch ~turns ~is_inner =
   let op = if is_inner then ( +. ) else ( -. ) in
   let radial_expansion = 2.0 *. pitch *. turns in
@@ -140,6 +145,11 @@ let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_l
 *)
 type transform_matrix = float * float * float * float
 
+(* Predefined transformation matrices *)
+let mirror_x_axis = 1.0, 0.0, 0.0, -1.0 (* Mirror across X axis (flip Y coordinates) *)
+let mirror_y_axis = -1.0, 0.0, 0.0, 1.0 (* Mirror across Y axis (flip X coordinates) *)
+let swap_xy = 0.0, 1.0, 1.0, 0.0 (* Swap X and Y coordinates *)
+
 (* Apply transformation to a point using matrix multiplication *)
 let transform_point (a, b, c, d) point = { x = (a *. point.x) +. (b *. point.y); y = (c *. point.x) +. (d *. point.y) }
 
@@ -247,12 +257,12 @@ let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~tr
       let horizontal_segments =
         generate_oval_loop' ~width:height ~height:width ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
       in
-      (* Transform: swap X and Y coordinates using matrix [0 1; 1 0] *)
-      transform_segments (0.0, 1.0, 1.0, 0.0) horizontal_segments)
+      (* Transform: swap X and Y coordinates *)
+      transform_segments swap_xy horizontal_segments)
   in
   segments
 
-let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance =
+let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index =
   let loop_generator turn_number is_last =
     match shape with
     | Round { diameter } ->
@@ -270,4 +280,21 @@ let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~cleara
       let is_last = i = pred num_turns in
       loop_generator (float_of_int i) is_last)
   in
-  List.concat all_loops
+  let segments = List.concat all_loops in
+
+  (* Mirror segments across the shorter dimension for odd layers *)
+  if layer_index mod 2 = 1 then (
+    let mirror_transform =
+      match shape with
+      | Round _ -> mirror_x_axis
+      | Square _ -> mirror_x_axis
+      | Rectangular { width; height } -> if width < height then mirror_y_axis else mirror_x_axis
+      | Oval { width; height } -> if width < height then mirror_y_axis else mirror_x_axis
+    in
+    transform_segments mirror_transform segments)
+  else segments
+
+let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers =
+  List.init layers (fun layer_index ->
+    let segments = generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index in
+    { layer_index; segments })
