@@ -57,7 +57,7 @@ let calculate_spiral_length shape pitch turns is_inner =
   in
   avg_circumference *. turns
 
-let generate_round_loop radius turn_number pitch is_inner _is_last =
+let generate_round_loop radius turn_number pitch is_inner _is_last _trace_width =
   let op = if is_inner then ( +. ) else ( -. ) in
   let angle_offset = Float.pi *. 2.0 *. turn_number in
   let current_radius = op radius (pitch *. turn_number) in
@@ -85,7 +85,7 @@ let generate_round_loop radius turn_number pitch is_inner _is_last =
 
     Arc { start = start_point; mid = mid_point; end_point; radius = mid_radius })
 
-let generate_square_loop size turn_number pitch is_inner _is_last =
+let generate_square_loop size turn_number pitch is_inner _is_last _trace_width =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
@@ -112,7 +112,7 @@ let generate_square_loop size turn_number pitch is_inner _is_last =
       };
   ]
 
-let generate_rectangular_loop width height turn_number pitch is_inner _is_last =
+let generate_rectangular_loop width height turn_number pitch is_inner _is_last _trace_width =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
@@ -160,7 +160,7 @@ let transform_segments transform segments =
     segments
 
 (* Always assumes horizontal oval (width >= height) *)
-let generate_oval_loop' width height turn_number pitch is_inner is_last =
+let generate_oval_loop' width height turn_number pitch is_inner is_last trace_width =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
@@ -176,7 +176,6 @@ let generate_oval_loop' width height turn_number pitch is_inner is_last =
     match is_last with
     | true ->
       let clearance = 0.00014 in
-      let trace_width = 0.0005 in
       let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
       let arc_radius' = arc_radius +. arc_clearance in
       let tail =
@@ -238,21 +237,21 @@ let generate_oval_loop' width height turn_number pitch is_inner is_last =
        }
   :: tail
 
-let generate_oval_loop width height turn_number pitch is_inner is_last =
+let generate_oval_loop width height turn_number pitch is_inner is_last trace_width =
   let is_horizontal = width >= height in
   let segments =
     if is_horizontal then
       (* Use original dimensions for horizontal oval *)
-      generate_oval_loop' width height turn_number pitch is_inner is_last
+      generate_oval_loop' width height turn_number pitch is_inner is_last trace_width
     else (
       (* For vertical oval, generate as horizontal with swapped dimensions, then transform *)
-      let horizontal_segments = generate_oval_loop' height width turn_number pitch is_inner is_last in
+      let horizontal_segments = generate_oval_loop' height width turn_number pitch is_inner is_last trace_width in
       (* Transform: swap X and Y coordinates using matrix [0 1; 1 0] *)
       transform_segments (0.0, 1.0, 1.0, 0.0) horizontal_segments)
   in
   segments
 
-let generate_spiral_segments shape pitch turns is_inner =
+let generate_spiral_segments shape pitch turns is_inner trace_width =
   let loop_generator =
     match shape with
     | Round { diameter } -> generate_round_loop (diameter *. 0.5)
@@ -265,12 +264,12 @@ let generate_spiral_segments shape pitch turns is_inner =
   let all_loops =
     List.init num_turns (fun i ->
       let is_last = i = pred num_turns in
-      loop_generator (float_of_int i) pitch is_inner is_last)
+      loop_generator (float_of_int i) pitch is_inner is_last trace_width)
   in
   List.concat all_loops
 
-let generate_spiral_path shape pitch turns is_inner =
-  let all_segments = generate_spiral_segments shape pitch turns is_inner in
+let generate_spiral_path shape pitch turns is_inner trace_width =
+  let all_segments = generate_spiral_segments shape pitch turns is_inner trace_width in
 
   (* Extract points from segments for compatibility with existing KiCad code *)
   let extract_points segments =
