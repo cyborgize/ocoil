@@ -1,6 +1,6 @@
 (library
  (public_name copper_trace_lib)
  (name copper_trace_lib)
- (libraries sexplib0)
+ (libraries sexplib0 uuidm)
  (preprocess
   (pps ppx_sexp_conv)))

@@ -1,6 +1,7 @@
 open Coil
 open Sexplib0.Sexp_conv
 module Sexp = Sexplib0.Sexp
+module Uuid = Uuidm
 
 type ('a, 'b) pair = 'a * 'b [@@deriving sexp_of]
 
@@ -93,6 +94,9 @@ let sexp_of_layer = function
   | Margin -> Sexp.Atom "Margin"
   | F_CrtYd -> Sexp.Atom "F.CrtYd"
   | B_CrtYd -> Sexp.Atom "B.CrtYd"
+
+(* Helper function to generate UUID strings *)
+let generate_uuid rand_state = Uuid.to_string (Uuid.v4_gen rand_state ())
 
 type gr_coord = float * float [@@deriving sexp_of]
 
@@ -343,8 +347,8 @@ let segment_to_primitive width_mm offset segment =
       }
 
 (* Convert spiral segments to footprint primitives *)
-let segment_to_footprint_primitive width_mm layer segment uuid_prefix i =
-  let uuid = Printf.sprintf "%s-%04d" uuid_prefix i in
+let segment_to_footprint_primitive rand_state width_mm layer segment =
+  let uuid = generate_uuid rand_state in
   match segment with
   | Line { start; end_point } ->
     `Line
@@ -368,6 +372,7 @@ let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ?(offs
 
 (* Generate footprint structure and write to channel *)
 let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers =
+  let rand_state = Random.State.make_self_init () in
   let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width in
   let pad_size = width *. 1000.0 in
 
@@ -387,9 +392,7 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
 
   (* Generate coil segments as footprint primitives *)
   let width_mm = width *. 1000.0 in
-  let coil_primitives =
-    List.mapi (fun i segment -> segment_to_footprint_primitive width_mm F_Cu segment "coil" i) segments
-  in
+  let coil_primitives = List.map (segment_to_footprint_primitive rand_state width_mm F_Cu) segments in
 
   (* Separate lines and arcs *)
   let coil_lines, coil_arcs =
@@ -406,25 +409,25 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   (* Build footprint structure using helper functions *)
   let pad1 =
     create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:"14a21f80-a77f-4136-92e0-923221b0e518"
+      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state)
   in
 
   let pad2 =
     create_pad "2" `smd `circle ~at:(inner_pad_pos.x, inner_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:"51855533-01a7-4cb4-87b1-27ff621360b1"
+      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state)
   in
 
   (* Create properties using helper functions *)
   let ref_property =
-    create_property "Reference" "L**" ~uuid:"c53f67d9-d280-48cc-b065-55df925e8d56" ~at:(0.0, -0.5) ~layer:F_SilkS
+    create_property "Reference" "L**" ~uuid:(generate_uuid rand_state) ~at:(0.0, -0.5) ~layer:F_SilkS
       ~font_thickness:0.1 ()
   in
 
-  let value_property = create_property "Value" "Val**" ~uuid:"dcb50d06-6893-4b51-a6f1-3a9e9428cb83" ~at:(0.0, 1.0) () in
+  let value_property = create_property "Value" "Val**" ~uuid:(generate_uuid rand_state) ~at:(0.0, 1.0) () in
 
-  let datasheet_property = create_property "Datasheet" "" ~uuid:"cf551db9-fc86-4936-b027-051c526e4bcd" () in
+  let datasheet_property = create_property "Datasheet" "" ~uuid:(generate_uuid rand_state) () in
 
-  let description_property = create_property "Description" "" ~uuid:"184cda2b-7a4b-4003-af2a-58ca378cc9de" () in
+  let description_property = create_property "Description" "" ~uuid:(generate_uuid rand_state) () in
 
   (* Generate MFR field based on input parameters *)
   let mfr_string =
@@ -441,7 +444,7 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
   in
 
-  let mfr_property = create_property "MFR" mfr_string ~uuid:"3826364c-19d9-4f33-a074-aa49377a9ce9" ~unlocked:None () in
+  let mfr_property = create_property "MFR" mfr_string ~uuid:(generate_uuid rand_state) ~unlocked:None () in
 
   (* Generate MFN field based on input parameters *)
   let mfn_string =
@@ -462,9 +465,7 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
   in
 
-  let mfn_property =
-    create_property "MFN" mfn_string ~uuid:"4554da17-05d2-4bc7-9de7-a5e9cf606005" ~unlocked:None ~hide:None ()
-  in
+  let mfn_property = create_property "MFN" mfn_string ~uuid:(generate_uuid rand_state) ~unlocked:None ~hide:None () in
 
   (* Calculate rectangle dimensions based on coil shape *)
   let base_width, base_height =
@@ -487,22 +488,22 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   (* Create footprint rectangle *)
   let fp_rectangle =
     create_fp_rect ~start:(-.half_width, -.half_height) ~end_:(half_width, half_height) ~stroke_width:0.1
-      ~stroke_type:`solid ~fill:`no ~layer:F_SilkS ~uuid:"b55377dc-9f66-4417-90d6-e165a7b32bc3"
+      ~stroke_type:`solid ~fill:`no ~layer:F_SilkS ~uuid:(generate_uuid rand_state)
   in
 
   (* Create footprint texts *)
   let mfn_text =
-    create_fp_text "${MFN}" ~at:(0.0, 0.0, 0.0) ~layer:F_SilkS ~uuid:"222182e3-a584-4cc6-a41b-c064499fe8b3"
-      ~font_size:(0.9, 0.9) ~font_thickness:0.1 ()
+    create_fp_text "${MFN}" ~at:(0.0, 0.0, 0.0) ~layer:F_SilkS ~uuid:(generate_uuid rand_state) ~font_size:(0.9, 0.9)
+      ~font_thickness:0.1 ()
   in
 
   let ref_text_back =
-    create_fp_text "${REFERENCE}" ~at:(0.0, -2.2125, 180.0) ~layer:B_Fab ~uuid:"424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5"
+    create_fp_text "${REFERENCE}" ~at:(0.0, -2.2125, 180.0) ~layer:B_Fab ~uuid:(generate_uuid rand_state)
       ~justify:(Some `mirror) ()
   in
 
   let ref_text_front =
-    create_fp_text "${REFERENCE}" ~at:(0.0, 2.4875, 0.0) ~layer:F_Fab ~uuid:"0439e334-26b8-4223-ace8-f721b97f5b67" ()
+    create_fp_text "${REFERENCE}" ~at:(0.0, 2.4875, 0.0) ~layer:F_Fab ~uuid:(generate_uuid rand_state) ()
   in
 
   let footprint =
