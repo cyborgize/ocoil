@@ -113,6 +113,13 @@ let layers_arg =
   let doc = "Number of PCB layers (default: 1)" in
   Arg.(value & opt int 1 & info [ "layers" ] ~docv:"LAYERS" ~doc)
 
+let clearance_arg =
+  let doc =
+    "Trace clearance (spacing between adjacent traces). Formats: <value>mm, <value>mil, or <value> (mm default). \
+     Default: 0.1mm"
+  in
+  Arg.(value & opt length_width_converter 1e-4 & info [ "c"; "clearance" ] ~docv:"CLEARANCE" ~doc)
+
 let output_arg =
   let doc = "Output file for KiCad footprint (default: stdout, use \"-\" for stdout)" in
   Arg.(value & opt string "-" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
@@ -199,13 +206,14 @@ let kicad_cmd =
     and+ is_inner = inner_diameter_flag
     and+ layers = layers_arg
     and+ width = width_arg
+    and+ clearance = clearance_arg
     and+ output_file = output_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
 
     (* Determine output channel *)
     let output_channel = if output_file = "-" then stdout else open_out output_file in
 
-    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers;
+    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance;
 
     (* Close file if it's not stdout *)
     if output_file <> "-" then close_out output_channel

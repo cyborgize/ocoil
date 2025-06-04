@@ -365,15 +365,16 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
 (* Generate KiCad primitives from spiral segments *)
-let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
+let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ~clearance ?(offset = { x = 0.0; y = 0.0 }) ()
+    =
   let width_mm = track_width *. 1000.0 in
-  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:track_width in
+  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:track_width ~clearance in
   List.map (segment_to_primitive width_mm offset) segments
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers =
+let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance =
   let rand_state = Random.State.make_self_init () in
-  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width in
+  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance in
   let pad_size = width *. 1000.0 in
 
   (* Calculate pad positions from first and last segments *)
@@ -476,8 +477,7 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     | Oval { width; height } -> width, height
   in
 
-  (* Add clearance: pitch already includes trace width *)
-  let clearance = pitch in
+  (* Add clearance around the coil *)
   let rect_width = (base_width +. clearance) *. 1000.0 in
   (* Convert to mm *)
   let rect_height = (base_height +. clearance) *. 1000.0 in
