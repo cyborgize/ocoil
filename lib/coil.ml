@@ -30,6 +30,7 @@ type path_segment =
 type layer_segments = {
   layer_index : int;
   segments : path_segment list;
+  last_point : point;
 }
 
 let calculate_spiral_length ~shape ~pitch ~turns ~is_inner =
@@ -294,7 +295,36 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
     transform_segments mirror_transform segments)
   else segments
 
+(* Calculate the last point coordinates for a coil layer *)
+let calculate_last_point ~shape ~pitch ~turns =
+  match shape with
+  | Round { diameter } ->
+    (* For round coils, the last point is at the inner radius *)
+    let radius = (diameter *. 0.5) -. (pitch *. turns) in
+    { x = radius; y = 0.0 }
+  | Square { size } ->
+    (* For square coils, the last point is at the inner edge *)
+    let half_size = (size *. 0.5) -. (pitch *. turns) in
+    { x = half_size; y = -.half_size }
+  | Rectangular { width; height } ->
+    (* For rectangular coils, the last point is at the inner edge *)
+    let half_width = (width *. 0.5) -. (pitch *. turns) in
+    let half_height = (height *. 0.5) -. (pitch *. turns) in
+    { x = half_width; y = -.half_height }
+  | Oval { width; height } ->
+    (* For oval coils, calculate based on main and across dimensions *)
+    let main_dim = max width height in
+    let across_dim = min width height in
+    let last_coord = -0.5 *. (pitch +. (main_dim -. across_dim)) in
+    if width >= height then
+      (* Horizontal oval: main axis is X, across axis is Y *)
+      { x = last_coord; y = 0.0 }
+    else
+      (* Vertical oval: main axis is Y, across axis is X *)
+      { x = 0.0; y = last_coord }
+
 let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers =
   List.init layers (fun layer_index ->
     let segments = generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index in
-    { layer_index; segments })
+    let last_point = calculate_last_point ~shape ~pitch ~turns in
+    { layer_index; segments; last_point })

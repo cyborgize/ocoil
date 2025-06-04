@@ -407,10 +407,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     match List.hd all_segments with
     | Line { start; _ } | Arc { start; _ } -> start
   in
-  let end_point =
-    match List.rev all_segments |> List.hd with
-    | Line { end_point; _ } | Arc { end_point; _ } -> end_point
-  in
+  let last_layer = List.rev segments |> List.hd in
+  let end_point = last_layer.last_point in
 
   (* Convert coordinates to KiCad units *)
   let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
@@ -420,7 +418,7 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   let width_mm = width *. 1000.0 in
   let coil_primitives =
     List.concat_map
-      (fun { Coil.layer_index; segments } ->
+      (fun { Coil.layer_index; segments; _ } ->
         let layer = assign_coil_layer layer_index layers in
         List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
       segments
@@ -452,15 +450,10 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   (* Generate vias for even layers (layer_index 0, 2, 4, ...) *)
   let via_pads =
     List.filter_map
-      (fun { Coil.layer_index; segments } ->
+      (fun { Coil.layer_index; segments; last_point } ->
         if layer_index mod 2 = 0 && List.length segments > 0 then (
-          (* Get the end point of the last segment *)
-          let last_segment = List.rev segments |> List.hd in
-          let end_point =
-            match last_segment with
-            | Line { end_point; _ } | Arc { end_point; _ } -> end_point
-          in
-          let via_pos = end_point.x *. 1000.0, end_point.y *. 1000.0 in
+          (* Use the calculated last point coordinates *)
+          let via_pos = last_point.x *. 1000.0, last_point.y *. 1000.0 in
           let via_number = Printf.sprintf "V%d" layer_index in
           let copper_size, drill_size = via_size in
           let copper_size_mm = copper_size *. 1000.0 in
