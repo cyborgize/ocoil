@@ -175,28 +175,39 @@ let generate_oval_loop' width height turn_number pitch is_inner is_last =
   let tail =
     match is_last with
     | true ->
-      let clearance = 0.00015 in
+      let clearance = 0.00014 in
       let trace_width = 0.0005 in
       let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
       let arc_radius' = arc_radius +. arc_clearance in
-      [
-        Line
-          {
-            start = { x = straight_length; y = arc_radius };
-            end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
-          };
-        Arc
-          {
-            start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
-            mid =
+      let tail =
+        match arc_clearance <= 0. with
+        | true -> []
+        | false ->
+          [
+            Line
               {
-                x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0);
-                y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+                start = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
+                end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = 0.0 };
               };
-            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
-            radius = arc_radius';
-          };
-      ]
+          ]
+      in
+      Line
+        {
+          start = { x = straight_length; y = arc_radius };
+          end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+        }
+      :: Arc
+           {
+             start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+             mid =
+               {
+                 x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0);
+                 y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+               };
+             end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
+             radius = arc_radius';
+           }
+      :: tail
     | false ->
       [
         Line
