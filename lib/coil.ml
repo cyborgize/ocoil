@@ -39,7 +39,7 @@ let calculate_spiral_length shape pitch turns is_inner =
   in
   avg_circumference *. turns
 
-let generate_round_loop radius turn_number pitch is_inner =
+let generate_round_loop radius turn_number pitch is_inner _is_last =
   let op = if is_inner then (+.) else (-.) in
   let angle_offset = Float.pi *. 2.0 *. turn_number in
   let current_radius = op radius (pitch *. turn_number) in
@@ -68,7 +68,7 @@ let generate_round_loop radius turn_number pitch is_inner =
     Arc { start = start_point; mid = mid_point; end_point; radius = mid_radius }
   )
 
-let generate_square_loop size turn_number pitch is_inner =
+let generate_square_loop size turn_number pitch is_inner _is_last =
   let op = if is_inner then (+.) else (-.) in
   let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
@@ -83,7 +83,7 @@ let generate_square_loop size turn_number pitch is_inner =
            end_point = { x = next_half_size; y = -.current_half_size } };
   ]
 
-let generate_rectangular_loop width height turn_number pitch is_inner =
+let generate_rectangular_loop width height turn_number pitch is_inner _is_last =
   let op = if is_inner then (+.) else (-.) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
@@ -99,7 +99,7 @@ let generate_rectangular_loop width height turn_number pitch is_inner =
            end_point = { x = next_half_w; y = -.current_half_h } };
   ]
 
-let generate_oval_loop width height turn_number pitch is_inner =
+let generate_oval_loop width height turn_number pitch is_inner is_last =
   let op = if is_inner then (+.) else (-.) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
@@ -113,20 +113,43 @@ let generate_oval_loop width height turn_number pitch is_inner =
     let straight_length = current_half_w -. min_dim in
     let next_straight_length = next_half_w -. next_min_dim in
     let arc_radius = min_dim in
-    [
-      Line { start = { x = -.straight_length -. 0.5 *. pitch; y = -.arc_radius }; 
-             end_point = { x = straight_length; y = -.arc_radius } };
-      Arc { start = { x = straight_length; y = -.arc_radius }; 
-            mid = { x = straight_length +. arc_radius; y = 0.0 }; 
-            end_point = { x = straight_length; y = arc_radius }; 
-            radius = arc_radius };
-      Line { start = { x = straight_length; y = arc_radius }; 
-             end_point = { x = -.next_straight_length -. 0.5 *. pitch; y = arc_radius } };
-      Arc { start = { x = -.next_straight_length -. 0.5 *. pitch; y = arc_radius }; 
-            mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch }; 
-            end_point = { x = -.next_straight_length -. 0.5 *. pitch; y = -.next_min_dim }; 
-            radius = arc_radius };
-    ]
+    let tail =
+      match is_last with
+      | true ->
+        let clearance = 0.00015 in
+        let trace_width = 0.0005 in
+        let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
+        let arc_radius' = arc_radius +. arc_clearance in
+        Line { start = { x = straight_length; y = arc_radius };
+          end_point = { x = -.next_straight_length -. 0.5 *. pitch +. arc_radius'; y = arc_radius } } ::
+        Arc { start = { x = -.next_straight_length -. 0.5 *. pitch +. arc_radius'; y = arc_radius };
+            mid = {
+              x = -.next_straight_length -. 0.5 *. pitch +. arc_radius' -. arc_radius' *. 0.5 *. sqrt(2.0);
+              y = (arc_radius -. arc_radius') +. arc_radius' *. 0.5 *. sqrt(2.0);
+            };
+            end_point = {
+              x = -.next_straight_length -. 0.5 *. pitch;
+              y = -.arc_clearance;
+            };
+          radius = arc_radius';
+        } ::
+        []
+      | false ->
+        Line { start = { x = straight_length; y = arc_radius };
+                end_point = { x = -.next_straight_length -. 0.5 *. pitch; y = arc_radius } } ::
+        Arc { start = { x = -.next_straight_length -. 0.5 *. pitch; y = arc_radius };
+              mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch };
+              end_point = { x = -.next_straight_length -. 0.5 *. pitch; y = -.next_min_dim };
+              radius = arc_radius } ::
+        []
+    in
+    Line { start = { x = -.straight_length -. 0.5 *. pitch; y = -.arc_radius };
+            end_point = { x = straight_length; y = -.arc_radius } } ::
+    Arc { start = { x = straight_length; y = -.arc_radius };
+          mid = { x = straight_length +. arc_radius; y = 0.0 };
+          end_point = { x = straight_length; y = arc_radius };
+          radius = arc_radius } ::
+    tail
   else
     let straight_length = current_half_h -. min_dim in
     let next_straight_length = next_half_h -. next_min_dim in
@@ -147,7 +170,8 @@ let generate_oval_loop width height turn_number pitch is_inner =
     ]
 
 let generate_spiral_segments shape pitch turns is_inner =
-  let loop_generator = match shape with
+  let loop_generator =
+    match shape with
     | Round { diameter } -> generate_round_loop (diameter *. 0.5)
     | Square { size } -> generate_square_loop size
     | Rectangular { width; height } -> generate_rectangular_loop width height
@@ -155,9 +179,13 @@ let generate_spiral_segments shape pitch turns is_inner =
   in
   
   let num_turns = int_of_float (Float.ceil turns) in
-  List.init num_turns (fun i -> 
-    loop_generator (float_of_int i) pitch is_inner
-  ) |> List.concat
+  let all_loops =
+    List.init num_turns (fun i ->
+      let is_last = i = pred num_turns in
+      loop_generator (float_of_int i) pitch is_inner is_last
+    )
+  in
+  List.concat all_loops
 
 let generate_spiral_path shape pitch turns is_inner =
   let all_segments = generate_spiral_segments shape pitch turns is_inner in
