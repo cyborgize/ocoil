@@ -76,6 +76,7 @@ type layer =
   | Margin
   | F_CrtYd
   | B_CrtYd
+  | All_Cu
 
 let sexp_of_layer = function
   | F_Cu -> Sexp.Atom "F.Cu"
@@ -94,6 +95,7 @@ let sexp_of_layer = function
   | Margin -> Sexp.Atom "Margin"
   | F_CrtYd -> Sexp.Atom "F.CrtYd"
   | B_CrtYd -> Sexp.Atom "B.CrtYd"
+  | All_Cu -> Sexp.Atom "*.Cu"
 
 (* Helper function to generate UUID strings *)
 let generate_uuid rand_state = Uuid.to_string (Uuid.v4_gen rand_state ())
@@ -141,7 +143,11 @@ type gr_primitive =
 [@@deriving sexp_of]
 
 type pad_coord = float * float [@@deriving sexp_of]
-type pad_type = [ `smd ] [@@deriving sexp_of]
+type pad_type =
+  [ `smd
+  | `thru_hole
+  ]
+[@@deriving sexp_of]
 type pad_shape =
   [ `circle
   | `custom
@@ -159,7 +165,9 @@ type pad_options = {
 type pad' = {
   at : pad_coord;
   size : pad_coord;
+  drill : float option; [@sexp.option]
   layers : layer list;
+  remove_unused_layers : [ `no ] option; [@sexp.option]
   options : pad_options option; [@sexp.option]
   primitives : gr_primitive list fields; [@sexp.omit_nil]
   uuid : string;
@@ -323,8 +331,14 @@ let create_property name value ~uuid ?(at = 0.0, 0.0) ?(unlocked = Some `yes) ?(
     { at; unlocked; layer; hide; uuid; effects = { font = { size = font_size; thickness = font_thickness } } } )
 
 (* Helper function to create a pad *)
-let create_pad number pad_type pad_shape ~at ~size ~layers ~options ~primitives ~uuid =
-  `pad (number, pad_type, pad_shape), { at; size; layers; options; primitives; uuid }
+let create_pad number pad_type pad_shape ~at ~size ~layers ~options ~primitives ~uuid ?(drill = None)
+  ?(remove_unused_layers = None) () =
+  `pad (number, pad_type, pad_shape), { at; size; drill; layers; remove_unused_layers; options; primitives; uuid }
+
+(* Helper function to create a thru-hole pad *)
+let create_thru_hole_pad number pad_shape ~at ~size ~drill ~uuid ?(remove_unused_layers = Some `no) () =
+  create_pad number `thru_hole pad_shape ~at ~size ~layers:[ All_Cu ] ~options:None ~primitives:[] ~uuid
+    ~drill:(Some drill) ~remove_unused_layers ()
 
 (* Helper function to create a footprint rectangle *)
 let create_fp_rect ~start ~end_ ~stroke_width ~stroke_type ~fill ~layer ~uuid =
@@ -427,12 +441,32 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   (* Build footprint structure using helper functions *)
   let pad1 =
     create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state)
+      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ()
   in
 
   let pad2 =
     create_pad "2" `smd `circle ~at:(inner_pad_pos.x, inner_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state)
+      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ()
+  in
+
+  (* Generate vias for even layers (layer_index 0, 2, 4, ...) *)
+  let via_pads =
+    List.filter_map
+      (fun { Coil.layer_index; segments } ->
+        if layer_index mod 2 = 0 && List.length segments > 0 then (
+          (* Get the end point of the last segment *)
+          let last_segment = List.rev segments |> List.hd in
+          let end_point =
+            match last_segment with
+            | Line { end_point; _ } | Arc { end_point; _ } -> end_point
+          in
+          let via_pos = end_point.x *. 1000.0, end_point.y *. 1000.0 in
+          let via_number = Printf.sprintf "V%d" layer_index in
+          Some
+            (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(0.3, 0.3) ~drill:0.15
+               ~uuid:(generate_uuid rand_state) ()))
+        else None)
+      segments
   in
 
   (* Create properties using helper functions *)
@@ -534,8 +568,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           embedded_fonts = `no;
         },
         ( [ ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property ],
-          ([ fp_rectangle ], (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], [ pad1; pad2 ]))))
-        ) ) )
+          ( [ fp_rectangle ],
+            (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], pad1 :: pad2 :: via_pads))) ) ) ) )
   in
 
   (* Convert to sexp and write *)
