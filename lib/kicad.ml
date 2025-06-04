@@ -58,6 +58,42 @@ let sexp_of_trim sexp_of_a a =
          x)
   | Atom _ as x -> x
 
+type layer =
+  | F_Cu
+  | B_Cu
+  | F_SilkS
+  | B_SilkS
+  | F_Fab
+  | B_Fab
+  | F_Mask
+  | B_Mask
+  | In1_Cu
+  | In2_Cu
+  | In3_Cu
+  | In4_Cu
+  | Edge_Cuts
+  | Margin
+  | F_CrtYd
+  | B_CrtYd
+
+let sexp_of_layer = function
+  | F_Cu -> Sexp.Atom "F.Cu"
+  | B_Cu -> Sexp.Atom "B.Cu"
+  | F_SilkS -> Sexp.Atom "F.SilkS"
+  | B_SilkS -> Sexp.Atom "B.SilkS"
+  | F_Fab -> Sexp.Atom "F.Fab"
+  | B_Fab -> Sexp.Atom "B.Fab"
+  | F_Mask -> Sexp.Atom "F.Mask"
+  | B_Mask -> Sexp.Atom "B.Mask"
+  | In1_Cu -> Sexp.Atom "In1.Cu"
+  | In2_Cu -> Sexp.Atom "In2.Cu"
+  | In3_Cu -> Sexp.Atom "In3.Cu"
+  | In4_Cu -> Sexp.Atom "In4.Cu"
+  | Edge_Cuts -> Sexp.Atom "Edge.Cuts"
+  | Margin -> Sexp.Atom "Margin"
+  | F_CrtYd -> Sexp.Atom "F.CrtYd"
+  | B_CrtYd -> Sexp.Atom "B.CrtYd"
+
 type gr_coord = float * float [@@deriving sexp_of]
 
 type gr_line' = {
@@ -91,29 +127,29 @@ type pad_shape =
   ]
 [@@deriving sexp_of]
 
-type kicad_pad'' = [ `pad of string * pad_type * pad_shape ] [@@deriving sexp_of]
+type pad'' = [ `pad of string * pad_type * pad_shape ] [@@deriving sexp_of]
 
-type kicad_pad_options = {
+type pad_options = {
   clearance : [ `outline ];
   anchor : [ `circle ];
 }
 [@@deriving sexp_of]
 
-type kicad_pad' = {
+type pad' = {
   at : pad_coord;
   size : pad_coord;
-  layers : string list;
-  options : kicad_pad_options option; [@sexp.option]
+  layers : layer list;
+  options : pad_options option; [@sexp.option]
   primitives : gr_primitive list fields; [@sexp.omit_nil]
   uuid : string;
 }
 [@@deriving sexp_of]
 
-type kicad_pad = (kicad_pad'' field, kicad_pad' fields) pair [@@deriving sexp_of]
+type pad = (pad'' field, pad' fields) pair [@@deriving sexp_of]
 
 type property_at = pad_coord [@@deriving sexp_of]
 type property_unlocked = [ `yes ] [@@deriving sexp_of]
-type property_layer = string [@@deriving sexp_of]
+type property_layer = layer [@@deriving sexp_of]
 type property_hide = [ `yes ] [@@deriving sexp_of]
 type property_uuid = string [@@deriving sexp_of]
 
@@ -129,9 +165,9 @@ type property_effects' = { font : property_font } [@@deriving sexp_of]
 
 type property_effects = property_effects' fields [@@deriving sexp_of]
 
-type kicad_property'' = [ `property of string * string ] [@@deriving sexp_of]
+type property'' = [ `property of string * string ] [@@deriving sexp_of]
 
-type kicad_property' = {
+type property' = {
   at : property_at;
   unlocked : property_unlocked option; [@sexp.option]
   layer : property_layer;
@@ -141,31 +177,58 @@ type kicad_property' = {
 }
 [@@deriving sexp_of]
 
-type kicad_property = (kicad_property'' field, kicad_property' fields) pair [@@deriving sexp_of]
+type property = (property'' field, property' fields) pair [@@deriving sexp_of]
 
-type fp_rect_coord = float * float [@@deriving sexp_of]
+type fp_coord = float * float [@@deriving sexp_of]
 
-type fp_rect_stroke' = {
+type fp_stroke' = {
   width : float;
   type_ : [ `solid ];
 }
 [@@deriving sexp_of]
 
-type fp_rect_stroke = fp_rect_stroke' trim fields [@@deriving sexp_of]
+type fp_stroke = fp_stroke' trim fields [@@deriving sexp_of]
 
 type fp_rect'' = [ `fp_rect ] [@@deriving sexp_of]
 
 type fp_rect' = {
-  start : fp_rect_coord;
-  end_ : fp_rect_coord;
-  stroke : fp_rect_stroke;
+  start : fp_coord;
+  end_ : fp_coord;
+  stroke : fp_stroke;
   fill : [ `no ];
-  layer : string;
+  layer : layer;
   uuid : string;
 }
 [@@deriving sexp_of]
 
 type fp_rect = (fp_rect'' field, fp_rect' trim fields) pair [@@deriving sexp_of]
+
+type fp_line'' = [ `fp_line ] [@@deriving sexp_of]
+
+type fp_line' = {
+  start : fp_coord;
+  end_ : fp_coord;
+  stroke : fp_stroke;
+  layer : layer;
+  uuid : string;
+}
+[@@deriving sexp_of]
+
+type fp_line = (fp_line'' field, fp_line' trim fields) pair [@@deriving sexp_of]
+
+type fp_arc'' = [ `fp_arc ] [@@deriving sexp_of]
+
+type fp_arc' = {
+  start : fp_coord;
+  mid : fp_coord;
+  end_ : fp_coord;
+  stroke : fp_stroke;
+  layer : layer;
+  uuid : string;
+}
+[@@deriving sexp_of]
+
+type fp_arc = (fp_arc'' field, fp_arc' trim fields) pair [@@deriving sexp_of]
 
 type fp_text_coord = float * float * float [@@deriving sexp_of]
 
@@ -190,7 +253,7 @@ type fp_text'' = [ `fp_text of [ `user ] * string ] [@@deriving sexp_of]
 type fp_text' = {
   at : fp_text_coord;
   unlocked : [ `yes ] option; [@sexp.option]
-  layer : string;
+  layer : layer;
   uuid : string;
   effects : fp_text_effects;
 }
@@ -198,36 +261,42 @@ type fp_text' = {
 
 type fp_text = (fp_text'' field, fp_text' fields) pair [@@deriving sexp_of]
 
-type kicad_footprint_meta = {
+type footprint_meta = {
   version : int;
   generator : string;
   generator_version : string;
-  layer : string;
+  layer : layer;
   attr : [ `smd ];
   embedded_fonts : [ `no ];
 }
 [@@deriving sexp_of]
 
-type kicad_footprint_pads = kicad_pad list [@@deriving sexp_of]
+type footprint_pads = pad list [@@deriving sexp_of]
 
-type kicad_footprint_properties = kicad_property list [@@deriving sexp_of]
+type footprint_properties = property list [@@deriving sexp_of]
 
-type kicad_footprint_rectangles = fp_rect list [@@deriving sexp_of]
+type footprint_rectangles = fp_rect list [@@deriving sexp_of]
 
-type kicad_footprint_texts = fp_text list [@@deriving sexp_of]
+type footprint_lines = fp_line list [@@deriving sexp_of]
 
-type kicad_footprint =
+type footprint_arcs = fp_arc list [@@deriving sexp_of]
+
+type footprint_texts = fp_text list [@@deriving sexp_of]
+
+type footprint =
   ( [ `footprint of string ],
-    ( kicad_footprint_meta,
-      ( kicad_footprint_properties,
-        (kicad_footprint_rectangles, (kicad_footprint_texts, kicad_footprint_pads) pair) pair )
+    ( footprint_meta,
+      ( footprint_properties,
+        ( footprint_rectangles,
+          (footprint_lines, (footprint_arcs, (footprint_texts, footprint_pads) pair) pair) pair )
+        pair )
       pair )
     pair )
   pair
 [@@deriving sexp_of]
 
 (* Helper function to create a property *)
-let create_property name value ~uuid ?(at = 0.0, 0.0) ?(unlocked = Some `yes) ?(layer = "F.Fab") ?(hide = Some `yes)
+let create_property name value ~uuid ?(at = 0.0, 0.0) ?(unlocked = Some `yes) ?(layer = F_Fab) ?(hide = Some `yes)
   ?(font_size = 1.0, 1.0) ?(font_thickness = 0.15) () =
   ( `property (name, value),
     { at; unlocked; layer; hide; uuid; effects = { font = { size = font_size; thickness = font_thickness } } } )
@@ -239,6 +308,14 @@ let create_pad number pad_type pad_shape ~at ~size ~layers ~options ~primitives 
 (* Helper function to create a footprint rectangle *)
 let create_fp_rect ~start ~end_ ~stroke_width ~stroke_type ~fill ~layer ~uuid =
   `fp_rect, { start; end_; stroke = { width = stroke_width; type_ = stroke_type }; fill; layer; uuid }
+
+(* Helper function to create a footprint line *)
+let create_fp_line ~start ~end_ ~stroke_width ~stroke_type ~layer ~uuid =
+  `fp_line, { start; end_; stroke = { width = stroke_width; type_ = stroke_type }; layer; uuid }
+
+(* Helper function to create a footprint arc *)
+let create_fp_arc ~start ~mid ~end_ ~stroke_width ~stroke_type ~layer ~uuid =
+  `fp_arc, { start; mid; end_; stroke = { width = stroke_width; type_ = stroke_type }; layer; uuid }
 
 (* Helper function to create a footprint text *)
 let create_fp_text text_content ~at ~layer ~uuid ?(text_type = `user) ?(unlocked = Some `yes) ?(font_size = 1.0, 1.0)
@@ -297,19 +374,19 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
 
   (* Build footprint structure using helper functions *)
   let pad1 =
-    create_pad "1" `smd `custom ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ "F.Cu" ]
+    create_pad "1" `smd `custom ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
       ~options:(Some { clearance = `outline; anchor = `circle })
       ~primitives:relative_primitives ~uuid:"14a21f80-a77f-4136-92e0-923221b0e518"
   in
 
   let pad2 =
-    create_pad "2" `smd `circle ~at:(inner_pad_pos.x, inner_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ "F.Cu" ]
+    create_pad "2" `smd `circle ~at:(inner_pad_pos.x, inner_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
       ~options:None ~primitives:[] ~uuid:"51855533-01a7-4cb4-87b1-27ff621360b1"
   in
 
   (* Create properties using helper functions *)
   let ref_property =
-    create_property "Reference" "L**" ~uuid:"c53f67d9-d280-48cc-b065-55df925e8d56" ~at:(0.0, -0.5) ~layer:"F.SilkS"
+    create_property "Reference" "L**" ~uuid:"c53f67d9-d280-48cc-b065-55df925e8d56" ~at:(0.0, -0.5) ~layer:F_SilkS
       ~font_thickness:0.1 ()
   in
 
@@ -380,22 +457,22 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   (* Create footprint rectangle *)
   let fp_rectangle =
     create_fp_rect ~start:(-.half_width, -.half_height) ~end_:(half_width, half_height) ~stroke_width:0.1
-      ~stroke_type:`solid ~fill:`no ~layer:"F.SilkS" ~uuid:"b55377dc-9f66-4417-90d6-e165a7b32bc3"
+      ~stroke_type:`solid ~fill:`no ~layer:F_SilkS ~uuid:"b55377dc-9f66-4417-90d6-e165a7b32bc3"
   in
 
   (* Create footprint texts *)
   let mfn_text =
-    create_fp_text "${MFN}" ~at:(0.0, 0.0, 0.0) ~layer:"F.SilkS" ~uuid:"222182e3-a584-4cc6-a41b-c064499fe8b3"
+    create_fp_text "${MFN}" ~at:(0.0, 0.0, 0.0) ~layer:F_SilkS ~uuid:"222182e3-a584-4cc6-a41b-c064499fe8b3"
       ~font_size:(0.9, 0.9) ~font_thickness:0.1 ()
   in
 
   let ref_text_back =
-    create_fp_text "${REFERENCE}" ~at:(0.0, -2.2125, 180.0) ~layer:"B.Fab" ~uuid:"424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5"
+    create_fp_text "${REFERENCE}" ~at:(0.0, -2.2125, 180.0) ~layer:B_Fab ~uuid:"424aa4af-1cf4-4d68-8e2b-7f4fed7b06c5"
       ~justify:(Some `mirror) ()
   in
 
   let ref_text_front =
-    create_fp_text "${REFERENCE}" ~at:(0.0, 2.4875, 0.0) ~layer:"F.Fab" ~uuid:"0439e334-26b8-4223-ace8-f721b97f5b67" ()
+    create_fp_text "${REFERENCE}" ~at:(0.0, 2.4875, 0.0) ~layer:F_Fab ~uuid:"0439e334-26b8-4223-ace8-f721b97f5b67" ()
   in
 
   let footprint =
@@ -404,16 +481,16 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           version = 20241229;
           generator = "copper_trace";
           generator_version = "1.0 ";
-          layer = "F.Cu";
+          layer = F_Cu;
           attr = `smd;
           embedded_fonts = `no;
         },
         ( [ ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property ],
-          ([ fp_rectangle ], ([ mfn_text; ref_text_back; ref_text_front ], [ pad1; pad2 ])) ) ) )
+          ([ fp_rectangle ], ([], ([], ([ mfn_text; ref_text_back; ref_text_front ], [ pad1; pad2 ])))) ) ) )
   in
 
   (* Convert to sexp and write *)
-  let sexp = sexp_of_kicad_footprint footprint in
+  let sexp = sexp_of_footprint footprint in
   let formatter = Format.formatter_of_out_channel output_channel in
   Sexp.pp_hum formatter sexp;
   Format.pp_print_newline formatter ();
