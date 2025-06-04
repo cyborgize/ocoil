@@ -171,8 +171,19 @@ let transform_segments transform segments =
           })
     segments
 
+(* Calculate the stagger step size for via positioning *)
+let calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance =
+  let effective_size = 0.5 *. (max trace_width via_copper_size +. via_copper_size) in
+  effective_size +. clearance
+
+(* Calculate via staggering offset along main axis *)
+let calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance =
+  let step = calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance in
+  float_of_int (layer_index / 2) *. step
+
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
-let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance =
+let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
+  ~layer_index ~via_copper_size =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_main = op (main_dim *. 0.5) (pitch *. turn_number) in
   let current_half_across = op (across_dim *. 0.5) (pitch *. turn_number) in
@@ -182,11 +193,13 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
   let straight_length = current_half_main -. current_half_across in
   let next_straight_length = next_half_main -. next_half_across in
   let arc_radius = current_half_across in
+  (* Calculate via staggering offset along main axis *)
   let tail =
     match is_last with
     | true ->
       let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
       let arc_radius' = arc_radius +. arc_clearance in
+      let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
       let tail =
         match arc_clearance <= 0. with
         | true -> []
@@ -194,25 +207,30 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
           [
             Line
               {
-                start = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
-                end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = 0.0 };
+                start = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance };
+                end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 };
               };
           ]
       in
       Line
         {
           start = { x = straight_length; y = arc_radius };
-          end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+          end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius };
         }
       :: Arc
            {
-             start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius'; y = arc_radius };
+             start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius };
              mid =
                {
-                 x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0);
+                 x =
+                   -.next_straight_length
+                   -. (0.5 *. pitch)
+                   +. arc_radius'
+                   -. (arc_radius' *. 0.5 *. sqrt 2.0)
+                   +. via_offset;
                  y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
                };
-             end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.arc_clearance };
+             end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance };
              radius = arc_radius';
            }
       :: tail
@@ -246,7 +264,8 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
        }
   :: tail
 
-let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance =
+let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance ~layer_index
+  ~via_copper_size =
   let main_dim, across_dim, transformation =
     if width >= height then
       (* Horizontal oval: no transformation needed *)
@@ -257,10 +276,12 @@ let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~tr
   in
   let segments =
     generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
+      ~layer_index ~via_copper_size
   in
   transform_segments transformation segments
 
-let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index =
+let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index ~via_copper_size
+    =
   let loop_generator turn_number is_last =
     match shape with
     | Round { diameter } ->
@@ -269,7 +290,8 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
     | Rectangular { width; height } ->
       generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
     | Oval { width; height } ->
-      generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
+      generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance ~layer_index
+        ~via_copper_size
   in
 
   let num_turns = int_of_float (Float.ceil turns) in
@@ -292,7 +314,7 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
   transform_segments transformation segments
 
 (* Calculate the last point coordinates for a coil layer *)
-let calculate_last_point ~shape ~pitch ~turns =
+let calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance =
   match shape with
   | Round { diameter } ->
     (* For round coils, the last point is at the inner radius *)
@@ -311,7 +333,9 @@ let calculate_last_point ~shape ~pitch ~turns =
     (* For oval coils, calculate based on main and across dimensions *)
     let main_dim = max width height in
     let across_dim = min width height in
-    let last_coord = -0.5 *. (pitch +. (main_dim -. across_dim)) in
+    (* Calculate via staggering offset along main axis *)
+    let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
+    let last_coord = (-0.5 *. (pitch +. (main_dim -. across_dim))) +. via_offset in
     if width >= height then
       (* Horizontal oval: main axis is X, across axis is Y *)
       { x = last_coord; y = 0.0 }
@@ -319,8 +343,11 @@ let calculate_last_point ~shape ~pitch ~turns =
       (* Vertical oval: main axis is Y, across axis is X *)
       { x = 0.0; y = last_coord }
 
-let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers =
+let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers ~via_copper_size =
   List.init layers (fun layer_index ->
-    let segments = generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index in
-    let last_point = calculate_last_point ~shape ~pitch ~turns in
+    let segments =
+      generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index
+        ~via_copper_size
+    in
+    let last_point = calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance in
     { layer_index; segments; last_point })

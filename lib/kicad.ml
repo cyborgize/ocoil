@@ -398,7 +398,10 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
 (* Generate footprint structure and write to channel *)
 let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
   let rand_state = Random.State.make_self_init () in
-  let segments = generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance ~layers in
+  let via_copper_size, _via_drill_size = via_size in
+  let segments =
+    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance ~layers ~via_copper_size
+  in
   let pad_size = width *. 1000.0 in
 
   (* Calculate pad positions from first and last segments *)
