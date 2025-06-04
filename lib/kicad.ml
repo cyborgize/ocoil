@@ -342,6 +342,24 @@ let segment_to_primitive width_mm offset segment =
         width = width_mm;
       }
 
+(* Convert spiral segments to footprint primitives *)
+let segment_to_footprint_primitive width_mm layer segment uuid_prefix i =
+  let uuid = Printf.sprintf "%s-%04d" uuid_prefix i in
+  match segment with
+  | Line { start; end_point } ->
+    `Line
+      (create_fp_line
+         ~start:(start.x *. 1000.0, start.y *. 1000.0)
+         ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
+         ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
+  | Arc { start; mid; end_point; _ } ->
+    `Arc
+      (create_fp_arc
+         ~start:(start.x *. 1000.0, start.y *. 1000.0)
+         ~mid:(mid.x *. 1000.0, mid.y *. 1000.0)
+         ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
+         ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
+
 (* Generate KiCad primitives from spiral segments *)
 let generate_kicad_primitives ~shape ~track_width ~pitch ~turns ~is_inner ?(offset = { x = 0.0; y = 0.0 }) () =
   let width_mm = track_width *. 1000.0 in
@@ -367,16 +385,28 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
   let inner_pad_pos = { x = end_point.x *. 1000.0; y = end_point.y *. 1000.0 } in
 
-  (* Generate primitives with coordinates relative to outer pad position *)
-  let relative_primitives =
-    generate_kicad_primitives ~shape ~track_width:width ~pitch ~turns ~is_inner ~offset:outer_pad_pos ()
+  (* Generate coil segments as footprint primitives *)
+  let width_mm = width *. 1000.0 in
+  let coil_primitives =
+    List.mapi (fun i segment -> segment_to_footprint_primitive width_mm F_Cu segment "coil" i) segments
   in
+
+  (* Separate lines and arcs *)
+  let coil_lines, coil_arcs =
+    List.fold_left
+      (fun (lines, arcs) primitive ->
+        match primitive with
+        | `Line line -> line :: lines, arcs
+        | `Arc arc -> lines, arc :: arcs)
+      ([], []) coil_primitives
+  in
+  let coil_lines = List.rev coil_lines in
+  let coil_arcs = List.rev coil_arcs in
 
   (* Build footprint structure using helper functions *)
   let pad1 =
-    create_pad "1" `smd `custom ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:(Some { clearance = `outline; anchor = `circle })
-      ~primitives:relative_primitives ~uuid:"14a21f80-a77f-4136-92e0-923221b0e518"
+    create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
+      ~options:None ~primitives:[] ~uuid:"14a21f80-a77f-4136-92e0-923221b0e518"
   in
 
   let pad2 =
@@ -486,7 +516,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           embedded_fonts = `no;
         },
         ( [ ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property ],
-          ([ fp_rectangle ], ([], ([], ([ mfn_text; ref_text_back; ref_text_front ], [ pad1; pad2 ])))) ) ) )
+          ([ fp_rectangle ], (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], [ pad1; pad2 ]))))
+        ) ) )
   in
 
   (* Convert to sexp and write *)
