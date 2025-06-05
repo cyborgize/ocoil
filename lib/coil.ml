@@ -195,12 +195,7 @@ let calculate_prepend_y_coordinate ~total_layers ~layer_index ~via_copper_size ~
     (* 5-6 layers: two points staggered symmetrically around main axis *)
     let stagger_step = calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance in
     let half_step = stagger_step *. 0.5 in
-    if layer_index <= 2 then
-      (* Layers 0, 1, 2 use negative coordinate *)
-      -.half_step
-    else
-      (* Layers 3, 4, 5 use positive coordinate *)
-      half_step)
+    if (layer_index + (layer_index / 3)) mod 2 = 1 then -.half_step else half_step)
 
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
@@ -221,9 +216,9 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
   let is_last_layer_odd = is_last_layer && layer_index mod 2 = 1 in
   let use_main_coordinate = is_first_loop && (layer_index = 0 || is_last_layer_odd) in
 
-  (* Check if we need to prepend arc and tangent line for first loop on odd layers (except last) *)
-  let is_odd_layer = layer_index mod 2 = 1 in
-  let prepend_arc_line = is_first_loop && is_odd_layer && not is_last_layer in
+  (* Check if we need to prepend arc and tangent line for first loop on all layers except first and last *)
+  let is_first_layer = layer_index = 0 in
+  let prepend_arc_line = is_first_loop && (not is_first_layer) && not is_last_layer in
 
   (* Calculate via staggering offset along main axis *)
   let tail =
