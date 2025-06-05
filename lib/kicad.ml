@@ -431,12 +431,12 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
   (* Get first available first_point for outer pad *)
   let first_point_opt = List.find_map (fun (layer_seg : Coil.layer_segments) -> layer_seg.first_point) segments in
 
-  (* Generate coil segments as footprint primitives *)
+  (* Generate coil segments as footprint primitives (excluding first layer) *)
   let width_mm = trace_width *. 1000.0 in
   let coil_primitives =
     List.concat_map
       (fun { Coil.layer_index; segments; _ } ->
-        if layer_index < keep_layers then (
+        if layer_index < keep_layers && layer_index > 0 then (
           let layer = assign_coil_layer layer_index total_layers keep_layers in
           List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
         else [])
@@ -460,9 +460,17 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
     match first_point_opt with
     | Some start_point ->
       let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
+      (* Extract first layer segments for pad1 primitives with proper offset *)
+      let first_layer_primitives =
+        match List.find_opt (fun { Coil.layer_index; _ } -> layer_index = 0) segments with
+        | Some { segments = first_segments; _ } ->
+          List.map (fun segment -> segment_to_primitive width_mm outer_pad_pos segment) first_segments
+        | None -> []
+      in
       [
-        create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-          ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ();
+        create_pad "1" `smd `custom ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
+          ~options:(Some { clearance = `outline; anchor = `circle })
+          ~primitives:first_layer_primitives ~uuid:(generate_uuid rand_state) ();
       ]
     | None -> []
   in
