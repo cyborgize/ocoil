@@ -104,17 +104,19 @@ let generate_uuid rand_state = Uuid.to_string (Uuid.v4_gen rand_state ())
 let pcb_layers = [| F_Cu; In1_Cu; In2_Cu; In3_Cu; In4_Cu; B_Cu |]
 
 (* Assign PCB layer based on layer index and total number of layers *)
-let assign_coil_layer layer_index total_layers =
-  if total_layers = 1 then
-    (* Single layer always uses F_Cu *)
+let assign_coil_layer layer_index _total_layers keep_layers =
+  if keep_layers = 1 then
+    (* Single layer output always uses F_Cu *)
     F_Cu
-  else if layer_index = total_layers - 1 then
-    (* Last layer uses B_Cu for multi-layer coils *)
-    pcb_layers.(Array.length pcb_layers - 1)
-  else if
+  else if layer_index >= keep_layers then
+    (* If layer index exceeds keep_layers, don't include this layer *)
+    F_Cu (* This shouldn't happen in practice due to filtering *)
+  else if layer_index = keep_layers - 1 then
+    (* Last kept layer uses B_Cu for multi-layer output *)
+    B_Cu
+  else if layer_index >= 0 && layer_index < Array.length pcb_layers then
     (* Use layer by index, defaulting to F_Cu if out of bounds *)
-    layer_index >= 0 && layer_index < Array.length pcb_layers
-  then pcb_layers.(layer_index)
+    pcb_layers.(layer_index)
   else F_Cu
 
 type gr_coord = float * float [@@deriving sexp_of]
@@ -416,11 +418,13 @@ let generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers =
   Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
+let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inner ~total_layers ~keep_layers ~clearance
+  ~via_size =
   let rand_state = Random.State.make_self_init () in
   let via_copper_size, _via_drill_size = via_size in
   let segments =
-    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers ~via_copper_size
+    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers:total_layers
+      ~via_copper_size
   in
   let pad_size = trace_width *. 1000.0 in
 
@@ -432,8 +436,10 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
   let coil_primitives =
     List.concat_map
       (fun { Coil.layer_index; segments; _ } ->
-        let layer = assign_coil_layer layer_index layers in
-        List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
+        if layer_index < keep_layers then (
+          let layer = assign_coil_layer layer_index total_layers keep_layers in
+          List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
+        else [])
       segments
   in
 
@@ -461,22 +467,24 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
     | None -> []
   in
 
-  (* Generate vias for layers with last_point coordinates *)
+  (* Generate vias for layers with last_point coordinates (only for kept layers) *)
   let via_pads =
     List.filter_map
       (fun { Coil.layer_index; segments = _; first_point = _; last_point } ->
-        match last_point with
-        | Some point ->
-          (* Use the calculated last point coordinates *)
-          let via_pos = point.x *. 1000.0, point.y *. 1000.0 in
-          let via_number = Printf.sprintf "V%d" layer_index in
-          let copper_size, drill_size = via_size in
-          let copper_size_mm = copper_size *. 1000.0 in
-          let drill_size_mm = drill_size *. 1000.0 in
-          Some
-            (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(copper_size_mm, copper_size_mm)
-               ~drill:drill_size_mm ~uuid:(generate_uuid rand_state) ())
-        | None -> None)
+        if layer_index < keep_layers then (
+          match last_point with
+          | Some point ->
+            (* Use the calculated last point coordinates *)
+            let via_pos = point.x *. 1000.0, point.y *. 1000.0 in
+            let via_number = Printf.sprintf "V%d" layer_index in
+            let copper_size, drill_size = via_size in
+            let copper_size_mm = copper_size *. 1000.0 in
+            let drill_size_mm = drill_size *. 1000.0 in
+            Some
+              (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(copper_size_mm, copper_size_mm)
+                 ~drill:drill_size_mm ~uuid:(generate_uuid rand_state) ())
+          | None -> None)
+        else None)
       segments
   in
 
@@ -505,14 +513,14 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
     in
     let width_str = Printf.sprintf "T%.1f" (trace_width *. 1000.0) in
     let pitch_str = Printf.sprintf "P%.1f" (pitch *. 1000.0) in
-    let layers_str = Printf.sprintf "S%d" layers in
+    let layers_str = Printf.sprintf "S%d" keep_layers in
     Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
   in
 
   let mfr_property = create_property "MFR" mfr_string ~uuid:(generate_uuid rand_state) ~unlocked:None () in
 
   (* Generate MFN field based on input parameters *)
-  let mfn_string = generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers in
+  let mfn_string = generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers:keep_layers in
 
   let mfn_property = create_property "MFN" mfn_string ~uuid:(generate_uuid rand_state) ~unlocked:None ~hide:None () in
 

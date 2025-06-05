@@ -115,6 +115,10 @@ let layers_arg =
   let doc = "Number of PCB layers (default: 1)" in
   Arg.(value & opt int 1 & info [ "layers" ] ~docv:"LAYERS" ~doc)
 
+let keep_layers_arg =
+  let doc = "Number of layers to include in footprint output (default: same as --layers)" in
+  Arg.(value & opt (some int) None & info [ "keep-layers" ] ~docv:"KEEP_LAYERS" ~doc)
+
 let clearance_arg =
   let doc =
     "Trace clearance (spacing between adjacent traces). Formats: <value>mm, <value>mil, or <value> (mm default). \
@@ -214,17 +218,25 @@ let kicad_cmd =
     and+ turns = turns_arg
     and+ is_inner = inner_diameter_flag
     and+ layers = layers_arg
+    and+ keep_layers_opt = keep_layers_arg
     and+ width = width_arg
     and+ clearance = clearance_arg
     and+ via_size = via_size_arg
     and+ output_file = output_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
 
+    (* Determine keep_layers (default to layers if not specified) *)
+    let keep_layers = Option.value keep_layers_opt ~default:layers in
+
+    (* Validate keep_layers *)
+    if keep_layers > layers then
+      failwith (Printf.sprintf "keep-layers (%d) cannot be greater than layers (%d)" keep_layers layers);
+
     (* Determine output file path *)
     let actual_output_file =
       if output_file = "-" then "-"
       else if Sys.file_exists output_file && Sys.is_directory output_file then (
-        let mfn_string = Kicad.generate_mfn_string ~shape ~trace_width:width ~pitch ~turns ~layers in
+        let mfn_string = Kicad.generate_mfn_string ~shape ~trace_width:width ~pitch ~turns ~layers:keep_layers in
         Filename.concat output_file ("Coil_" ^ mfn_string ^ ".kicad_mod"))
       else output_file
     in
@@ -232,8 +244,8 @@ let kicad_cmd =
     (* Determine output channel *)
     let output_channel = if actual_output_file = "-" then stdout else open_out actual_output_file in
 
-    Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~is_inner ~layers ~clearance
-      ~via_size;
+    Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~is_inner ~total_layers:layers
+      ~keep_layers ~clearance ~via_size;
 
     (* Close file if it's not stdout *)
     if actual_output_file <> "-" then close_out output_channel
