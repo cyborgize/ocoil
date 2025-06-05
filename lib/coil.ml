@@ -30,6 +30,13 @@ type path_segment =
 type layer_segments = {
   layer_index : int;
   segments : path_segment list;
+  first_point : point option;
+  last_point : point option;
+}
+
+type 'a loop_result = {
+  segments : 'a list;
+  first_point : point option;
   last_point : point option;
 }
 
@@ -71,74 +78,104 @@ let generate_round_loop ~radius ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_
   let num_arcs = 8 in
   let angle_step = Float.pi *. 2.0 /. float_of_int num_arcs in
 
-  List.init num_arcs (fun i ->
-    let start_angle = angle_offset +. (float_of_int i *. angle_step) in
-    let end_angle = angle_offset +. (float_of_int (i + 1) *. angle_step) in
-    let mid_angle = (start_angle +. end_angle) *. 0.5 in
+  let segments =
+    List.init num_arcs (fun i ->
+      let start_angle = angle_offset +. (float_of_int i *. angle_step) in
+      let end_angle = angle_offset +. (float_of_int (i + 1) *. angle_step) in
+      let mid_angle = (start_angle +. end_angle) *. 0.5 in
 
-    (* Calculate the radius progression for this arc *)
-    let arc_progress = float_of_int i /. float_of_int num_arcs in
-    let next_arc_progress = float_of_int (i + 1) /. float_of_int num_arcs in
-    let mid_progress = (arc_progress +. next_arc_progress) *. 0.5 in
+      (* Calculate the radius progression for this arc *)
+      let arc_progress = float_of_int i /. float_of_int num_arcs in
+      let next_arc_progress = float_of_int (i + 1) /. float_of_int num_arcs in
+      let mid_progress = (arc_progress +. next_arc_progress) *. 0.5 in
 
-    let start_radius = current_radius +. ((next_radius -. current_radius) *. arc_progress) in
-    let end_radius = current_radius +. ((next_radius -. current_radius) *. next_arc_progress) in
-    let mid_radius = current_radius +. ((next_radius -. current_radius) *. mid_progress) in
+      let start_radius = current_radius +. ((next_radius -. current_radius) *. arc_progress) in
+      let end_radius = current_radius +. ((next_radius -. current_radius) *. next_arc_progress) in
+      let mid_radius = current_radius +. ((next_radius -. current_radius) *. mid_progress) in
 
-    let start_point = { x = start_radius *. cos start_angle; y = start_radius *. sin start_angle } in
-    let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
-    let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
+      let start_point = { x = start_radius *. cos start_angle; y = start_radius *. sin start_angle } in
+      let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
+      let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
 
-    Arc { start = start_point; mid = mid_point; end_point; radius = mid_radius })
+      Arc { start = start_point; mid = mid_point; end_point; radius = mid_radius })
+  in
+
+  let first_point = Some { x = current_radius *. cos angle_offset; y = current_radius *. sin angle_offset } in
+  let last_point =
+    Some
+      {
+        x = next_radius *. cos (angle_offset +. (Float.pi *. 2.0));
+        y = next_radius *. sin (angle_offset +. (Float.pi *. 2.0));
+      }
+  in
+
+  { segments; first_point; last_point }
 
 let generate_square_loop ~size ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_width:_ ~clearance:_ =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
-  [
-    Line
-      {
-        start = { x = current_half_size; y = op (-.current_half_size) pitch };
-        end_point = { x = current_half_size; y = current_half_size };
-      };
-    Line
-      {
-        start = { x = current_half_size; y = current_half_size };
-        end_point = { x = -.current_half_size; y = current_half_size };
-      };
-    Line
-      {
-        start = { x = -.current_half_size; y = current_half_size };
-        end_point = { x = -.current_half_size; y = -.current_half_size };
-      };
-    Line
-      {
-        start = { x = -.current_half_size; y = -.current_half_size };
-        end_point = { x = next_half_size; y = -.current_half_size };
-      };
-  ]
+  let segments =
+    [
+      Line
+        {
+          start = { x = current_half_size; y = op (-.current_half_size) pitch };
+          end_point = { x = current_half_size; y = current_half_size };
+        };
+      Line
+        {
+          start = { x = current_half_size; y = current_half_size };
+          end_point = { x = -.current_half_size; y = current_half_size };
+        };
+      Line
+        {
+          start = { x = -.current_half_size; y = current_half_size };
+          end_point = { x = -.current_half_size; y = -.current_half_size };
+        };
+      Line
+        {
+          start = { x = -.current_half_size; y = -.current_half_size };
+          end_point = { x = next_half_size; y = -.current_half_size };
+        };
+    ]
+  in
+
+  let first_point = Some { x = current_half_size; y = op (-.current_half_size) pitch } in
+  let last_point = Some { x = next_half_size; y = -.current_half_size } in
+
+  { segments; first_point; last_point }
 
 let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_width:_ ~clearance:_ =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
   let next_half_w = op (width *. 0.5) (pitch *. (turn_number +. 1.0)) in
-  [
-    Line
-      {
-        start = { x = current_half_w; y = op (-.current_half_h) pitch };
-        end_point = { x = current_half_w; y = current_half_h };
-      };
-    Line
-      { start = { x = current_half_w; y = current_half_h }; end_point = { x = -.current_half_w; y = current_half_h } };
-    Line
-      {
-        start = { x = -.current_half_w; y = current_half_h };
-        end_point = { x = -.current_half_w; y = -.current_half_h };
-      };
-    Line
-      { start = { x = -.current_half_w; y = -.current_half_h }; end_point = { x = next_half_w; y = -.current_half_h } };
-  ]
+  let segments =
+    [
+      Line
+        {
+          start = { x = current_half_w; y = op (-.current_half_h) pitch };
+          end_point = { x = current_half_w; y = current_half_h };
+        };
+      Line
+        { start = { x = current_half_w; y = current_half_h }; end_point = { x = -.current_half_w; y = current_half_h } };
+      Line
+        {
+          start = { x = -.current_half_w; y = current_half_h };
+          end_point = { x = -.current_half_w; y = -.current_half_h };
+        };
+      Line
+        {
+          start = { x = -.current_half_w; y = -.current_half_h };
+          end_point = { x = next_half_w; y = -.current_half_h };
+        };
+    ]
+  in
+
+  let first_point = Some { x = current_half_w; y = op (-.current_half_h) pitch } in
+  let last_point = Some { x = next_half_w; y = -.current_half_h } in
+
+  { segments; first_point; last_point }
 
 (* Transformation matrix type: 2x2 matrix as (a, b, c, d) where:
    [a b] [x]   [a*x + b*y]
@@ -337,20 +374,46 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
         })
     in
 
-    Line { start = main_axis_point; end_point = tangent_point }
-    :: Arc
-         {
-           start = tangent_point;
-           mid =
-             {
-               x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-               y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-             };
-           end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
-           radius = prepend_arc_radius;
-         }
-    :: main_segments)
-  else main_segments
+    let prepend_segments =
+      [
+        Line { start = main_axis_point; end_point = tangent_point };
+        Arc
+          {
+            start = tangent_point;
+            mid =
+              {
+                x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+                y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+              };
+            end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
+            radius = prepend_arc_radius;
+          };
+      ]
+    in
+    let all_segments = prepend_segments @ main_segments in
+    let first_point = Some main_axis_point in
+    let last_point =
+      if is_last then (
+        let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
+        Some { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
+      else Some { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
+    in
+    { segments = all_segments; first_point; last_point })
+  else (
+    let first_point =
+      Some
+        {
+          x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
+          y = -.arc_radius;
+        }
+    in
+    let last_point =
+      if is_last then (
+        let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
+        Some { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
+      else Some { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
+    in
+    { segments = main_segments; first_point; last_point })
 
 let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance ~layer_index
   ~via_copper_size ~total_layers =
@@ -362,11 +425,14 @@ let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~tr
       (* Vertical oval: swap dimensions and apply coordinate transformation *)
       height, width, swap_xy
   in
-  let segments =
+  let loop_result =
     generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
       ~layer_index ~via_copper_size ~total_layers
   in
-  transform_segments transformation segments
+  let transformed_segments = transform_segments transformation loop_result.segments in
+  let transformed_first_point = Option.map (transform_point transformation) loop_result.first_point in
+  let transformed_last_point = Option.map (transform_point transformation) loop_result.last_point in
+  { segments = transformed_segments; first_point = transformed_first_point; last_point = transformed_last_point }
 
 let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index ~via_copper_size
   ~total_layers =
@@ -383,12 +449,22 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
   in
 
   let num_turns = int_of_float (Float.ceil turns) in
-  let all_loops =
-    List.init num_turns (fun i ->
-      let is_last = i = pred num_turns in
-      loop_generator (float_of_int i) is_last)
+
+  (* Fold over loops to accumulate segments and track first/last points *)
+  let accumulator = { segments = []; first_point = None; last_point = None } in
+  let { segments; first_point; last_point } =
+    List.fold_left
+      (fun acc i ->
+        let is_last = i = pred num_turns in
+        let loop_result = loop_generator (float_of_int i) is_last in
+        {
+          segments = loop_result.segments :: acc.segments;
+          first_point = Option.fold ~none:loop_result.first_point ~some:Option.some acc.first_point;
+          last_point = Option.fold ~none:acc.last_point ~some:Option.some loop_result.last_point;
+        })
+      accumulator (List.init num_turns Fun.id)
   in
-  let segments = List.concat all_loops in
+  let segments = List.concat segments in
 
   let transformation =
     if layer_index mod 2 = 1 then (
@@ -399,47 +475,16 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
         if width < height then mirror_y_axis else mirror_x_axis)
     else identity
   in
-  transform_segments transformation segments
 
-(* Calculate the last point coordinates for a coil layer *)
-let calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance =
-  match shape with
-  | Round { diameter } ->
-    (* For round coils, the last point is at the inner radius *)
-    let radius = (diameter *. 0.5) -. (pitch *. turns) in
-    { x = radius; y = 0.0 }
-  | Square { size } ->
-    (* For square coils, the last point is at the inner edge *)
-    let half_size = (size *. 0.5) -. (pitch *. turns) in
-    { x = half_size; y = -.half_size }
-  | Rectangular { width; height } ->
-    (* For rectangular coils, the last point is at the inner edge *)
-    let half_width = (width *. 0.5) -. (pitch *. turns) in
-    let half_height = (height *. 0.5) -. (pitch *. turns) in
-    { x = half_width; y = -.half_height }
-  | Oval { width; height } ->
-    (* For oval coils, calculate based on main and across dimensions *)
-    let main_dim = max width height in
-    let across_dim = min width height in
-    (* Calculate via staggering offset along main axis *)
-    let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-    let last_coord = (-0.5 *. (pitch +. (main_dim -. across_dim))) +. via_offset in
-    if width >= height then
-      (* Horizontal oval: main axis is X, across axis is Y *)
-      { x = last_coord; y = 0.0 }
-    else
-      (* Vertical oval: main axis is Y, across axis is X *)
-      { x = 0.0; y = last_coord }
+  let first_point, last_point = if layer_index mod 2 = 0 then first_point, last_point else last_point, first_point in
+  {
+    layer_index;
+    segments = transform_segments transformation segments;
+    first_point = Option.map (transform_point transformation) first_point;
+    last_point = Option.map (transform_point transformation) last_point;
+  }
 
 let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers ~via_copper_size =
   List.init layers (fun layer_index ->
-    let segments =
-      generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index
-        ~via_copper_size ~total_layers:layers
-    in
-    let last_point =
-      if layer_index mod 2 = 0 then
-        Some (calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance)
-      else None
-    in
-    { layer_index; segments; last_point })
+    generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index ~via_copper_size
+      ~total_layers:layers)

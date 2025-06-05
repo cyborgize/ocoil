@@ -404,15 +404,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   in
   let pad_size = width *. 1000.0 in
 
-  (* Calculate pad positions from first and last segments *)
-  let all_segments = List.concat_map (fun layer -> layer.segments) segments in
-  let start_point =
-    match List.hd all_segments with
-    | Line { start; _ } | Arc { start; _ } -> start
-  in
-
-  (* Convert coordinates to KiCad units *)
-  let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
+  (* Get first available first_point for outer pad *)
+  let first_point_opt = List.find_map (fun (layer_seg : Coil.layer_segments) -> layer_seg.first_point) segments in
 
   (* Generate coil segments as footprint primitives *)
   let width_mm = width *. 1000.0 in
@@ -437,15 +430,21 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   let coil_arcs = List.rev coil_arcs in
 
   (* Build footprint structure using helper functions *)
-  let pad1 =
-    create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ()
+  let outer_pads =
+    match first_point_opt with
+    | Some start_point ->
+      let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
+      [
+        create_pad "1" `smd `circle ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
+          ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ();
+      ]
+    | None -> []
   in
 
   (* Generate vias for layers with last_point coordinates *)
   let via_pads =
     List.filter_map
-      (fun { Coil.layer_index; segments = _; last_point } ->
+      (fun { Coil.layer_index; segments = _; first_point = _; last_point } ->
         match last_point with
         | Some point ->
           (* Use the calculated last point coordinates *)
@@ -560,8 +559,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           embedded_fonts = `no;
         },
         ( [ ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property ],
-          ([ fp_rectangle ], (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], pad1 :: via_pads))))
-        ) ) )
+          ( [ fp_rectangle ],
+            (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], outer_pads @ via_pads))) ) ) ) )
   in
 
   (* Convert to sexp and write *)
