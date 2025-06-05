@@ -410,12 +410,9 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     match List.hd all_segments with
     | Line { start; _ } | Arc { start; _ } -> start
   in
-  let last_layer = List.rev segments |> List.hd in
-  let end_point = last_layer.last_point in
 
   (* Convert coordinates to KiCad units *)
   let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
-  let inner_pad_pos = { x = end_point.x *. 1000.0; y = end_point.y *. 1000.0 } in
 
   (* Generate coil segments as footprint primitives *)
   let width_mm = width *. 1000.0 in
@@ -445,26 +442,22 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
       ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ()
   in
 
-  let pad2 =
-    create_pad "2" `smd `circle ~at:(inner_pad_pos.x, inner_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-      ~options:None ~primitives:[] ~uuid:(generate_uuid rand_state) ()
-  in
-
-  (* Generate vias for even layers (layer_index 0, 2, 4, ...) *)
+  (* Generate vias for layers with last_point coordinates *)
   let via_pads =
     List.filter_map
-      (fun { Coil.layer_index; segments; last_point } ->
-        if layer_index mod 2 = 0 && List.length segments > 0 then (
+      (fun { Coil.layer_index; segments = _; last_point } ->
+        match last_point with
+        | Some point ->
           (* Use the calculated last point coordinates *)
-          let via_pos = last_point.x *. 1000.0, last_point.y *. 1000.0 in
+          let via_pos = point.x *. 1000.0, point.y *. 1000.0 in
           let via_number = Printf.sprintf "V%d" layer_index in
           let copper_size, drill_size = via_size in
           let copper_size_mm = copper_size *. 1000.0 in
           let drill_size_mm = drill_size *. 1000.0 in
           Some
             (create_thru_hole_pad via_number `circle ~at:via_pos ~size:(copper_size_mm, copper_size_mm)
-               ~drill:drill_size_mm ~uuid:(generate_uuid rand_state) ()))
-        else None)
+               ~drill:drill_size_mm ~uuid:(generate_uuid rand_state) ())
+        | None -> None)
       segments
   in
 
@@ -567,8 +560,8 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
           embedded_fonts = `no;
         },
         ( [ ref_property; value_property; datasheet_property; description_property; mfr_property; mfn_property ],
-          ( [ fp_rectangle ],
-            (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], pad1 :: pad2 :: via_pads))) ) ) ) )
+          ([ fp_rectangle ], (coil_lines, (coil_arcs, ([ mfn_text; ref_text_back; ref_text_front ], pad1 :: via_pads))))
+        ) ) )
   in
 
   (* Convert to sexp and write *)

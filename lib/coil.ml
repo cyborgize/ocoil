@@ -30,7 +30,7 @@ type path_segment =
 type layer_segments = {
   layer_index : int;
   segments : path_segment list;
-  last_point : point;
+  last_point : point option;
 }
 
 let calculate_spiral_length ~shape ~pitch ~turns ~is_inner =
@@ -437,5 +437,9 @@ let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~cleara
       generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index
         ~via_copper_size ~total_layers:layers
     in
-    let last_point = calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance in
+    let last_point =
+      if layer_index mod 2 = 0 then
+        Some (calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance)
+      else None
+    in
     { layer_index; segments; last_point })
