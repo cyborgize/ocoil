@@ -220,14 +220,23 @@ let kicad_cmd =
     and+ output_file = output_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
 
+    (* Determine output file path *)
+    let actual_output_file =
+      if output_file = "-" then "-"
+      else if Sys.file_exists output_file && Sys.is_directory output_file then (
+        let mfn_string = Kicad.generate_mfn_string ~shape ~trace_width:width ~pitch ~turns ~layers in
+        Filename.concat output_file ("Coil_" ^ mfn_string ^ ".kicad_mod"))
+      else output_file
+    in
+
     (* Determine output channel *)
-    let output_channel = if output_file = "-" then stdout else open_out output_file in
+    let output_channel = if actual_output_file = "-" then stdout else open_out actual_output_file in
 
     Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~is_inner ~layers ~clearance
       ~via_size;
 
     (* Close file if it's not stdout *)
-    if output_file <> "-" then close_out output_channel
+    if actual_output_file <> "-" then close_out output_channel
   in
   Cmd.v info term
 

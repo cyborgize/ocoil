@@ -395,6 +395,26 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
          ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
+(* Generate MFN string from parameters *)
+let generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers =
+  let dimensions_str =
+    match shape with
+    | Round { diameter } -> Printf.sprintf "%.0f" ((diameter +. trace_width) *. 1000.0)
+    | Square { size } -> Printf.sprintf "%.0f" ((size +. trace_width) *. 1000.0)
+    | Rectangular { width; height } ->
+      Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
+    | Oval { width; height } ->
+      Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
+  in
+  let layers_str = Printf.sprintf "S%d" layers in
+  let width_hundredths = int_of_float (trace_width *. 1000.0 *. 100.0) in
+  (* Convert to hundredths of mm *)
+  let pitch_hundredths = int_of_float (pitch *. 1000.0 *. 100.0) in
+  (* Convert to hundredths of mm *)
+  let turns_tenths = int_of_float (turns *. 10.0) in
+  (* Convert to tenths *)
+  Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
+
 (* Generate footprint structure and write to channel *)
 let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
   let rand_state = Random.State.make_self_init () in
@@ -492,25 +512,7 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inne
   let mfr_property = create_property "MFR" mfr_string ~uuid:(generate_uuid rand_state) ~unlocked:None () in
 
   (* Generate MFN field based on input parameters *)
-  let mfn_string =
-    let dimensions_str =
-      match shape with
-      | Round { diameter } -> Printf.sprintf "%.0f" ((diameter +. trace_width) *. 1000.0)
-      | Square { size } -> Printf.sprintf "%.0f" ((size +. trace_width) *. 1000.0)
-      | Rectangular { width; height } ->
-        Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
-      | Oval { width; height } ->
-        Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
-    in
-    let layers_str = Printf.sprintf "S%d" layers in
-    let width_hundredths = int_of_float (trace_width *. 1000.0 *. 100.0) in
-    (* Convert to hundredths of mm *)
-    let pitch_hundredths = int_of_float (pitch *. 1000.0 *. 100.0) in
-    (* Convert to hundredths of mm *)
-    let turns_tenths = int_of_float (turns *. 10.0) in
-    (* Convert to tenths *)
-    Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
-  in
+  let mfn_string = generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers in
 
   let mfn_property = create_property "MFN" mfn_string ~uuid:(generate_uuid rand_state) ~unlocked:None ~hide:None () in
 
