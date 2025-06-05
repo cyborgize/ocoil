@@ -171,6 +171,11 @@ let transform_segments transform segments =
           })
     segments
 
+(* Calculate minimum distance between via and trace  *)
+let calculate_via_trace_distance ~via_copper_size ~trace_width ~clearance =
+  let effective_size = 0.5 *. (max trace_width via_copper_size +. trace_width) in
+  effective_size +. clearance
+
 (* Calculate the stagger step size for via positioning *)
 let calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance =
   let effective_size = 0.5 *. (max trace_width via_copper_size +. via_copper_size) in
@@ -180,6 +185,22 @@ let calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance =
 let calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance =
   let step = calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance in
   float_of_int (layer_index / 2) *. step
+
+(* Calculate desired Y coordinate for prepended arc main axis point *)
+let calculate_prepend_y_coordinate ~total_layers ~layer_index ~via_copper_size ~trace_width ~clearance =
+  if total_layers <= 4 then
+    (* Up to 4 layers: single point at Y=0 *)
+    0.0
+  else (
+    (* 5-6 layers: two points staggered symmetrically around main axis *)
+    let stagger_step = calculate_via_stagger_step ~via_copper_size ~trace_width ~clearance in
+    let half_step = stagger_step *. 0.5 in
+    if layer_index <= 2 then
+      (* Layers 0, 1, 2 use negative coordinate *)
+      -.half_step
+    else
+      (* Layers 3, 4, 5 use positive coordinate *)
+      half_step)
 
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
@@ -283,19 +304,56 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
 
   (* Prepend arc and tangent line for odd layers (except last) *)
   if prepend_arc_line then (
+    let arc_center_x = -.straight_length -. (0.5 *. pitch) in
+    let arc_center_y = 0.5 *. pitch in
     let prepend_arc_radius = arc_radius +. (0.5 *. pitch) in
-    Printf.printf "prepending start arc\n";
-    Arc
-      {
-        start = { x = -.straight_length -. (0.5 *. pitch) -. prepend_arc_radius; y = 0.5 *. pitch };
-        mid =
-          {
-            x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-            y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-          };
-        end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
-        radius = prepend_arc_radius;
-      }
+    let next_arc_radius = next_half_across in
+    let via_offset = calculate_via_trace_distance ~via_copper_size ~trace_width ~clearance in
+    (* Calculate the main axis point coordinates considering desired Y coordinate *)
+    let desired_distance = next_arc_radius +. (0.5 *. pitch) +. via_offset in
+    let desired_y =
+      calculate_prepend_y_coordinate ~total_layers ~layer_index ~via_copper_size ~trace_width ~clearance
+    in
+    let dy_to_center = desired_y -. arc_center_y in
+    (* Y offset from point to arc center *)
+    let dx_to_center = sqrt ((desired_distance *. desired_distance) -. (dy_to_center *. dy_to_center)) in
+    let main_axis_point = { x = arc_center_x -. dx_to_center; y = desired_y } in
+
+    (* Calculate tangent point on the arc *)
+    let dx = main_axis_point.x -. arc_center_x in
+    let dy = main_axis_point.y -. arc_center_y in
+    let distance = sqrt ((dx *. dx) +. (dy *. dy)) in
+
+    let tangent_point =
+      if distance <= prepend_arc_radius then
+        (* Point is inside or on the circle, fall back to perpendicular point *)
+        {
+          x = arc_center_x +. (dx *. prepend_arc_radius /. distance);
+          y = arc_center_y +. (dy *. prepend_arc_radius /. distance);
+        }
+      else (
+        (* Point is outside the circle, calculate true tangent *)
+        let tangent_length = sqrt ((distance *. distance) -. (prepend_arc_radius *. prepend_arc_radius)) in
+        let sin_angle = tangent_length /. distance in
+        let cos_angle = prepend_arc_radius /. distance in
+        {
+          x = arc_center_x +. ((dx *. cos_angle) -. (dy *. sin_angle));
+          y = arc_center_y +. ((dy *. cos_angle) +. (dx *. sin_angle));
+        })
+    in
+
+    Line { start = main_axis_point; end_point = tangent_point }
+    :: Arc
+         {
+           start = tangent_point;
+           mid =
+             {
+               x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+               y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+             };
+           end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
+           radius = prepend_arc_radius;
+         }
     :: main_segments)
   else main_segments
 
