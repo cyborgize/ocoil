@@ -519,10 +519,10 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
     | Oval { width; height } -> width, height
   in
 
-  (* Add clearance around the coil *)
-  let rect_width = (base_width +. clearance) *. 1000.0 in
+  (* Add clearance and trace width around the coil *)
+  let rect_width = (base_width +. clearance +. width) *. 1000.0 in
   (* Convert to mm *)
-  let rect_height = (base_height +. clearance) *. 1000.0 in
+  let rect_height = (base_height +. clearance +. width) *. 1000.0 in
   (* Convert to mm *)
   let half_width = rect_width /. 2.0 in
   let half_height = rect_height /. 2.0 in
