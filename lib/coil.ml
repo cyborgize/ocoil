@@ -183,7 +183,7 @@ let calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance =
 
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
-  ~layer_index ~via_copper_size =
+  ~layer_index ~via_copper_size ~total_layers =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_main = op (main_dim *. 0.5) (pitch *. turn_number) in
   let current_half_across = op (across_dim *. 0.5) (pitch *. turn_number) in
@@ -193,6 +193,17 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
   let straight_length = current_half_main -. current_half_across in
   let next_straight_length = next_half_main -. next_half_across in
   let arc_radius = current_half_across in
+
+  (* Check if this is the first loop on first layer or last odd layer *)
+  let is_first_loop = turn_number = 0.0 in
+  let is_last_layer = layer_index = total_layers - 1 in
+  let is_last_layer_odd = is_last_layer && layer_index mod 2 = 1 in
+  let use_main_coordinate = is_first_loop && (layer_index = 0 || is_last_layer_odd) in
+
+  (* Check if we need to prepend arc and tangent line for first loop on odd layers (except last) *)
+  let is_odd_layer = layer_index mod 2 = 1 in
+  let prepend_arc_line = is_first_loop && is_odd_layer && not is_last_layer in
+
   (* Calculate via staggering offset along main axis *)
   let tail =
     match is_last with
@@ -250,22 +261,46 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
           };
       ]
   in
-  Line
-    {
-      start = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
-      end_point = { x = straight_length; y = -.arc_radius };
-    }
-  :: Arc
-       {
-         start = { x = straight_length; y = -.arc_radius };
-         mid = { x = straight_length +. arc_radius; y = 0.0 };
-         end_point = { x = straight_length; y = arc_radius };
-         radius = arc_radius;
-       }
-  :: tail
+  let main_segments =
+    Line
+      {
+        start =
+          {
+            x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
+            y = -.arc_radius;
+          };
+        end_point = { x = straight_length; y = -.arc_radius };
+      }
+    :: Arc
+         {
+           start = { x = straight_length; y = -.arc_radius };
+           mid = { x = straight_length +. arc_radius; y = 0.0 };
+           end_point = { x = straight_length; y = arc_radius };
+           radius = arc_radius;
+         }
+    :: tail
+  in
+
+  (* Prepend arc and tangent line for odd layers (except last) *)
+  if prepend_arc_line then (
+    let prepend_arc_radius = arc_radius +. (0.5 *. pitch) in
+    Printf.printf "prepending start arc\n";
+    Arc
+      {
+        start = { x = -.straight_length -. (0.5 *. pitch) -. prepend_arc_radius; y = 0.5 *. pitch };
+        mid =
+          {
+            x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+            y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+          };
+        end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
+        radius = prepend_arc_radius;
+      }
+    :: main_segments)
+  else main_segments
 
 let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance ~layer_index
-  ~via_copper_size =
+  ~via_copper_size ~total_layers =
   let main_dim, across_dim, transformation =
     if width >= height then
       (* Horizontal oval: no transformation needed *)
@@ -276,12 +311,12 @@ let generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~tr
   in
   let segments =
     generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
-      ~layer_index ~via_copper_size
+      ~layer_index ~via_copper_size ~total_layers
   in
   transform_segments transformation segments
 
 let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index ~via_copper_size
-    =
+  ~total_layers =
   let loop_generator turn_number is_last =
     match shape with
     | Round { diameter } ->
@@ -291,7 +326,7 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
       generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
     | Oval { width; height } ->
       generate_oval_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance ~layer_index
-        ~via_copper_size
+        ~via_copper_size ~total_layers
   in
 
   let num_turns = int_of_float (Float.ceil turns) in
@@ -347,7 +382,7 @@ let generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~cleara
   List.init layers (fun layer_index ->
     let segments =
       generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layer_index
-        ~via_copper_size
+        ~via_copper_size ~total_layers:layers
     in
     let last_point = calculate_last_point ~shape ~pitch ~turns ~layer_index ~via_copper_size ~trace_width ~clearance in
     { layer_index; segments; last_point })
