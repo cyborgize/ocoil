@@ -396,19 +396,19 @@ let segment_to_footprint_primitive rand_state width_mm layer segment =
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
+let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size =
   let rand_state = Random.State.make_self_init () in
   let via_copper_size, _via_drill_size = via_size in
   let segments =
-    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width:width ~clearance ~layers ~via_copper_size
+    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers ~via_copper_size
   in
-  let pad_size = width *. 1000.0 in
+  let pad_size = trace_width *. 1000.0 in
 
   (* Get first available first_point for outer pad *)
   let first_point_opt = List.find_map (fun (layer_seg : Coil.layer_segments) -> layer_seg.first_point) segments in
 
   (* Generate coil segments as footprint primitives *)
-  let width_mm = width *. 1000.0 in
+  let width_mm = trace_width *. 1000.0 in
   let coil_primitives =
     List.concat_map
       (fun { Coil.layer_index; segments; _ } ->
@@ -476,12 +476,14 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   let mfr_string =
     let shape_str =
       match shape with
-      | Round { diameter } -> Printf.sprintf "%.0fx%.0f" (diameter *. 1000.0) (diameter *. 1000.0)
-      | Square { size } -> Printf.sprintf "%.0fx%.0f" (size *. 1000.0) (size *. 1000.0)
-      | Rectangular { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
-      | Oval { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+      | Round { diameter } -> Printf.sprintf "%.0fx%.0f" ((diameter +. trace_width) *. 1000.0) (diameter *. 1000.0)
+      | Square { size } -> Printf.sprintf "%.0fx%.0f" ((size +. trace_width) *. 1000.0) ((size +. trace_width) *. 1000.0)
+      | Rectangular { width; height } ->
+        Printf.sprintf "%.0fx%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
+      | Oval { width; height } ->
+        Printf.sprintf "%.0fx%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
     in
-    let width_str = Printf.sprintf "T%.1f" (width *. 1000.0) in
+    let width_str = Printf.sprintf "T%.1f" (trace_width *. 1000.0) in
     let pitch_str = Printf.sprintf "P%.1f" (pitch *. 1000.0) in
     let layers_str = Printf.sprintf "S%d" layers in
     Printf.sprintf "Coil_%s_%s_%s_%s" shape_str width_str pitch_str layers_str
@@ -493,13 +495,15 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   let mfn_string =
     let dimensions_str =
       match shape with
-      | Round { diameter } -> Printf.sprintf "%.0f" (diameter *. 1000.0)
-      | Square { size } -> Printf.sprintf "%.0f" (size *. 1000.0)
-      | Rectangular { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
-      | Oval { width; height } -> Printf.sprintf "%.0fx%.0f" (width *. 1000.0) (height *. 1000.0)
+      | Round { diameter } -> Printf.sprintf "%.0f" ((diameter +. trace_width) *. 1000.0)
+      | Square { size } -> Printf.sprintf "%.0f" ((size +. trace_width) *. 1000.0)
+      | Rectangular { width; height } ->
+        Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
+      | Oval { width; height } ->
+        Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
     in
     let layers_str = Printf.sprintf "S%d" layers in
-    let width_hundredths = int_of_float (width *. 1000.0 *. 100.0) in
+    let width_hundredths = int_of_float (trace_width *. 1000.0 *. 100.0) in
     (* Convert to hundredths of mm *)
     let pitch_hundredths = int_of_float (pitch *. 1000.0 *. 100.0) in
     (* Convert to hundredths of mm *)
@@ -520,9 +524,9 @@ let generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~lay
   in
 
   (* Add clearance and trace width around the coil *)
-  let rect_width = (base_width +. clearance +. width) *. 1000.0 in
+  let rect_width = (base_width +. clearance +. trace_width) *. 1000.0 in
   (* Convert to mm *)
-  let rect_height = (base_height +. clearance +. width) *. 1000.0 in
+  let rect_height = (base_height +. clearance +. trace_width) *. 1000.0 in
   (* Convert to mm *)
   let half_width = rect_width /. 2.0 in
   let half_height = rect_height /. 2.0 in

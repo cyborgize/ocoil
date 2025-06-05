@@ -223,7 +223,8 @@ let kicad_cmd =
     (* Determine output channel *)
     let output_channel = if output_file = "-" then stdout else open_out output_file in
 
-    Kicad.generate_footprint output_channel ~shape ~width ~pitch ~turns ~is_inner ~layers ~clearance ~via_size;
+    Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~is_inner ~layers ~clearance
+      ~via_size;
 
     (* Close file if it's not stdout *)
     if output_file <> "-" then close_out output_channel
