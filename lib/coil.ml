@@ -78,46 +78,6 @@ let calculate_spiral_length ~shape ~pitch ~turns =
   in
   avg_circumference *. turns
 
-let generate_round_loop ~radius ~turn_number ~pitch ~is_last:_ ~trace_width:_ ~clearance:_ =
-  let angle_offset = Float.pi *. 2.0 *. turn_number in
-  let current_radius = radius -. (pitch *. turn_number) in
-  let next_radius = radius -. (pitch *. (turn_number +. 1.0)) in
-  let num_arcs = 8 in
-  let angle_step = Float.pi *. 2.0 /. float_of_int num_arcs in
-
-  let segments =
-    List.init num_arcs (fun i ->
-      let start_angle = angle_offset +. (float_of_int i *. angle_step) in
-      let end_angle = angle_offset +. (float_of_int (i + 1) *. angle_step) in
-      let mid_angle = (start_angle +. end_angle) *. 0.5 in
-
-      (* Calculate the radius progression for this arc *)
-      let arc_progress = float_of_int i /. float_of_int num_arcs in
-      let next_arc_progress = float_of_int (i + 1) /. float_of_int num_arcs in
-      let mid_progress = (arc_progress +. next_arc_progress) *. 0.5 in
-
-      let start_radius = current_radius +. ((next_radius -. current_radius) *. arc_progress) in
-      let end_radius = current_radius +. ((next_radius -. current_radius) *. next_arc_progress) in
-      let mid_radius = current_radius +. ((next_radius -. current_radius) *. mid_progress) in
-
-      let start_point = { x = start_radius *. cos start_angle; y = start_radius *. sin start_angle } in
-      let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
-      let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
-
-      make_arc ~start:start_point ~mid:mid_point ~end_:end_point ~radius:mid_radius)
-  in
-
-  let first_point = Some { x = current_radius *. cos angle_offset; y = current_radius *. sin angle_offset } in
-  let last_point =
-    Some
-      {
-        x = next_radius *. cos (angle_offset +. (Float.pi *. 2.0));
-        y = next_radius *. sin (angle_offset +. (Float.pi *. 2.0));
-      }
-  in
-
-  { segments; first_point; last_point }
-
 let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_last:_ ~trace_width:_ ~clearance:_ =
   let current_half_w = (width *. 0.5) -. (pitch *. turn_number) in
   let current_half_h = (height *. 0.5) -. (pitch *. turn_number) in
@@ -206,6 +166,16 @@ let cons opt_x l =
   | Some x -> x :: l
   | None -> l
 
+(* Helper function to check if a line segment is nearly zero length *)
+let is_line_nearly_zero ~start ~end_ =
+  let dx = end_.x -. start.x in
+  let dy = end_.y -. start.y in
+  let length = sqrt ((dx *. dx) +. (dy *. dy)) in
+  length < 1e-6
+
+(* Helper function to check if a scalar length is nearly zero *)
+let is_length_nearly_zero length = abs_float length < 1e-6
+
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trace_width ~clearance ~layer_index
   ~via_copper_size ~total_layers =
@@ -255,9 +225,17 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trac
         if arc_clearance <= 0. then None else Some (make_line ~start:optional_line_start ~end_:optional_line_end)
       in
 
-      make_line ~start:line1_start ~end_:line1_end
-      :: make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius'
-      :: cons optional_line []
+      (* Skip the straight line if it's degenerate *)
+      let optional_first_line =
+        if is_line_nearly_zero ~start:line1_start ~end_:line1_end then None
+        else Some (make_line ~start:line1_start ~end_:line1_end)
+      in
+
+      cons optional_first_line
+        (make_arc
+           ~start:(if optional_first_line = None then line1_start else arc_start)
+           ~mid:arc_mid ~end_:arc_end ~radius:arc_radius'
+        :: cons optional_line [])
     | false ->
       (* Compute points for false case segments *)
       let line_start = { x = straight_length; y = arc_radius } in
@@ -266,10 +244,18 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trac
       let arc_mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch } in
       let arc_end = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across } in
 
-      [
-        make_line ~start:line_start ~end_:line_end;
-        make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius;
-      ]
+      (* Skip the straight line if it's degenerate *)
+      let optional_tail_line =
+        if is_line_nearly_zero ~start:line_start ~end_:line_end then None
+        else Some (make_line ~start:line_start ~end_:line_end)
+      in
+
+      cons optional_tail_line
+        [
+          make_arc
+            ~start:(if optional_tail_line = None then line_start else arc_start)
+            ~mid:arc_mid ~end_:arc_end ~radius:arc_radius;
+        ]
   in
   let main_segments =
     (* Compute points for main segments *)
@@ -284,9 +270,17 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trac
     let main_arc_mid = { x = straight_length +. arc_radius; y = 0.0 } in
     let main_arc_end = { x = straight_length; y = arc_radius } in
 
-    make_line ~start:main_line_start ~end_:main_line_end
-    :: make_arc ~start:main_arc_start ~mid:main_arc_mid ~end_:main_arc_end ~radius:arc_radius
-    :: tail
+    (* Skip the main straight line if it's degenerate *)
+    let optional_main_line =
+      if is_line_nearly_zero ~start:main_line_start ~end_:main_line_end then None
+      else Some (make_line ~start:main_line_start ~end_:main_line_end)
+    in
+
+    cons optional_main_line
+      (make_arc
+         ~start:(if optional_main_line = None then main_line_start else main_arc_start)
+         ~mid:main_arc_mid ~end_:main_arc_end ~radius:arc_radius
+      :: tail)
   in
 
   (* Prepend arc and tangent line for odd layers (except last) *)
@@ -394,7 +388,8 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance 
   let loop_generator turn_number is_last =
     match shape with
     | Round { diameter } ->
-      generate_round_loop ~radius:(diameter *. 0.5) ~turn_number ~pitch ~is_last ~trace_width ~clearance
+      generate_oval_loop ~width:diameter ~height:diameter ~turn_number ~pitch ~is_last ~trace_width ~clearance
+        ~layer_index ~via_copper_size ~total_layers
     | Square { size } ->
       generate_rectangular_loop ~width:size ~height:size ~turn_number ~pitch ~is_last ~trace_width ~clearance
     | Rectangular { width; height } ->
