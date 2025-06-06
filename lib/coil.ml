@@ -226,6 +226,12 @@ let calculate_prepend_y_coordinate ~total_layers ~layer_index ~via_copper_size ~
     let half_step = stagger_step *. 0.5 in
     if (layer_index + (layer_index / 3)) mod 2 = 1 then -.half_step else half_step)
 
+(* Helper function to conditionally prepend to a list *)
+let cons opt_x l =
+  match opt_x with
+  | Some x -> x :: l
+  | None -> l
+
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
   ~layer_index ~via_copper_size ~total_layers =
@@ -256,15 +262,13 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
       let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
       let arc_radius' = arc_radius +. arc_clearance in
       let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      let tail =
-        match arc_clearance <= 0. with
-        | true -> []
-        | false ->
-          [
-            make_line
-              ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
-              ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 };
-          ]
+      let optional_line =
+        if arc_clearance <= 0. then None
+        else
+          Some
+            (make_line
+               ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
+               ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
       in
       make_line ~start:{ x = straight_length; y = arc_radius }
         ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius }
@@ -282,7 +286,7 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
              }
            ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
            ~radius:arc_radius'
-      :: tail
+      :: cons optional_line []
     | false ->
       [
         make_line ~start:{ x = straight_length; y = arc_radius }
@@ -349,20 +353,18 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
         })
     in
 
-    let prepend_segments =
-      [
-        make_line ~start:main_axis_point ~end_point:tangent_point;
-        make_arc ~start:tangent_point
-          ~mid:
-            {
-              x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-              y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-            }
-          ~end_point:{ x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius }
-          ~radius:prepend_arc_radius;
-      ]
+    let all_segments =
+      make_line ~start:main_axis_point ~end_point:tangent_point
+      :: make_arc ~start:tangent_point
+           ~mid:
+             {
+               x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+               y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+             }
+           ~end_point:{ x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius }
+           ~radius:prepend_arc_radius
+      :: main_segments
     in
-    let all_segments = prepend_segments @ main_segments in
     let first_point = Some main_axis_point in
     let last_point =
       if is_last then (
