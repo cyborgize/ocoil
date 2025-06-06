@@ -418,13 +418,12 @@ let generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers =
   Printf.sprintf "%s%sW%02dP%02dT%03d" dimensions_str layers_str width_hundredths pitch_hundredths turns_tenths
 
 (* Generate footprint structure and write to channel *)
-let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~is_inner ~total_layers ~keep_layers ~clearance
-  ~via_size =
+let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~total_layers ~keep_layers ~clearance ~via_size
+    =
   let rand_state = Random.State.make_self_init () in
   let via_copper_size, _via_drill_size = via_size in
   let segments =
-    generate_spiral_segments ~shape ~pitch ~turns ~is_inner ~trace_width ~clearance ~layers:total_layers
-      ~via_copper_size
+    generate_spiral_segments ~shape ~pitch ~turns ~trace_width ~clearance ~layers:total_layers ~via_copper_size
   in
   let pad_size = trace_width *. 1000.0 in
 

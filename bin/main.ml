@@ -86,10 +86,6 @@ let turns_arg =
   let doc = "Number of turns (can be non-integer, e.g., 2.5)" in
   Arg.(required & opt (some float) None & info [ "n"; "turns" ] ~docv:"TURNS" ~doc)
 
-let inner_diameter_flag =
-  let doc = "Treat diameter as inner diameter (default: outer diameter)" in
-  Arg.(value & flag & info [ "inner-diameter" ] ~doc)
-
 let round_converter = Arg.conv (parse_length_width, fun ppf d -> Format.fprintf ppf "%.6e" d)
 let square_converter = Arg.conv (parse_length_width, fun ppf s -> Format.fprintf ppf "%.6e" s)
 let rectangle_converter = Arg.pair ~sep:'x' dimension_converter dimension_converter
@@ -176,21 +172,19 @@ let coil_cmd =
     and+ oval_opt = oval_arg
     and+ pitch = pitch_arg
     and+ turns = turns_arg
-    and+ is_inner = inner_diameter_flag
     and+ layers = layers_arg
     and+ width = width_arg
     and+ thickness = thickness_arg
     and+ temperature = temperature_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
-    let single_layer_length = Coil.calculate_spiral_length ~shape ~pitch ~turns ~is_inner in
+    let single_layer_length = Coil.calculate_spiral_length ~shape ~pitch ~turns in
     let total_length = single_layer_length *. float_of_int layers in
     let resistance = Trace.calculate_resistance total_length width thickness temperature in
     Printf.printf "Spiral coil resistance: %.6f Ohms\n" resistance;
-    let diameter_type = if is_inner then "inner" else "outer" in
     let shape_str, size_info =
       match shape with
-      | Coil.Round { diameter } -> "round", Printf.sprintf "Diameter (%s): %.3f mm" diameter_type (diameter *. 1000.0)
-      | Coil.Square { size } -> "square", Printf.sprintf "Size (%s): %.3f mm" diameter_type (size *. 1000.0)
+      | Coil.Round { diameter } -> "round", Printf.sprintf "Diameter (outer): %.3f mm" (diameter *. 1000.0)
+      | Coil.Square { size } -> "square", Printf.sprintf "Size (outer): %.3f mm" (size *. 1000.0)
       | Coil.Rectangular { width; height } ->
         "rectangular", Printf.sprintf "Dimensions: %.3f mm × %.3f mm" (width *. 1000.0) (height *. 1000.0)
       | Coil.Oval { width; height } ->
@@ -216,7 +210,6 @@ let kicad_cmd =
     and+ oval_opt = oval_arg
     and+ pitch = pitch_arg
     and+ turns = turns_arg
-    and+ is_inner = inner_diameter_flag
     and+ layers = layers_arg
     and+ keep_layers_opt = keep_layers_arg
     and+ width = width_arg
@@ -244,8 +237,8 @@ let kicad_cmd =
     (* Determine output channel *)
     let output_channel = if actual_output_file = "-" then stdout else open_out actual_output_file in
 
-    Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~is_inner ~total_layers:layers
-      ~keep_layers ~clearance ~via_size;
+    Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~total_layers:layers ~keep_layers
+      ~clearance ~via_size;
 
     (* Close file if it's not stdout *)
     if actual_output_file <> "-" then close_out output_channel
