@@ -120,25 +120,25 @@ let generate_square_loop ~size ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_w
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
+
+  (* Compute all points first *)
+  let p1 = { x = current_half_size; y = op (-.current_half_size) pitch } in
+  let p2 = { x = current_half_size; y = current_half_size } in
+  let p3 = { x = -.current_half_size; y = current_half_size } in
+  let p4 = { x = -.current_half_size; y = -.current_half_size } in
+  let p5 = { x = next_half_size; y = -.current_half_size } in
+
   let segments =
     [
-      make_line
-        ~start:{ x = current_half_size; y = op (-.current_half_size) pitch }
-        ~end_:{ x = current_half_size; y = current_half_size };
-      make_line
-        ~start:{ x = current_half_size; y = current_half_size }
-        ~end_:{ x = -.current_half_size; y = current_half_size };
-      make_line
-        ~start:{ x = -.current_half_size; y = current_half_size }
-        ~end_:{ x = -.current_half_size; y = -.current_half_size };
-      make_line
-        ~start:{ x = -.current_half_size; y = -.current_half_size }
-        ~end_:{ x = next_half_size; y = -.current_half_size };
+      make_line ~start:p1 ~end_:p2;
+      make_line ~start:p2 ~end_:p3;
+      make_line ~start:p3 ~end_:p4;
+      make_line ~start:p4 ~end_:p5;
     ]
   in
 
-  let first_point = Some { x = current_half_size; y = op (-.current_half_size) pitch } in
-  let last_point = Some { x = next_half_size; y = -.current_half_size } in
+  let first_point = Some p1 in
+  let last_point = Some p5 in
 
   { segments; first_point; last_point }
 
@@ -147,19 +147,25 @@ let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_l
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
   let current_half_h = op (height *. 0.5) (pitch *. turn_number) in
   let next_half_w = op (width *. 0.5) (pitch *. (turn_number +. 1.0)) in
+
+  (* Compute all points first *)
+  let p1 = { x = current_half_w; y = op (-.current_half_h) pitch } in
+  let p2 = { x = current_half_w; y = current_half_h } in
+  let p3 = { x = -.current_half_w; y = current_half_h } in
+  let p4 = { x = -.current_half_w; y = -.current_half_h } in
+  let p5 = { x = next_half_w; y = -.current_half_h } in
+
   let segments =
     [
-      make_line
-        ~start:{ x = current_half_w; y = op (-.current_half_h) pitch }
-        ~end_:{ x = current_half_w; y = current_half_h };
-      make_line ~start:{ x = current_half_w; y = current_half_h } ~end_:{ x = -.current_half_w; y = current_half_h };
-      make_line ~start:{ x = -.current_half_w; y = current_half_h } ~end_:{ x = -.current_half_w; y = -.current_half_h };
-      make_line ~start:{ x = -.current_half_w; y = -.current_half_h } ~end_:{ x = next_half_w; y = -.current_half_h };
+      make_line ~start:p1 ~end_:p2;
+      make_line ~start:p2 ~end_:p3;
+      make_line ~start:p3 ~end_:p4;
+      make_line ~start:p4 ~end_:p5;
     ]
   in
 
-  let first_point = Some { x = current_half_w; y = op (-.current_half_h) pitch } in
-  let last_point = Some { x = next_half_w; y = -.current_half_h } in
+  let first_point = Some p1 in
+  let last_point = Some p5 in
 
   { segments; first_point; last_point }
 
@@ -255,54 +261,57 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
       let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
       let arc_radius' = arc_radius +. arc_clearance in
       let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      let optional_line =
-        if arc_clearance <= 0. then None
-        else
-          Some
-            (make_line
-               ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
-               ~end_:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
+
+      (* Compute points for tail segments *)
+      let line_start_x = -.next_straight_length -. (0.5 *. pitch) +. via_offset in
+      let optional_line_start = { x = line_start_x; y = -.arc_clearance } in
+      let optional_line_end = { x = line_start_x; y = 0.0 } in
+      let line1_start = { x = straight_length; y = arc_radius } in
+      let line1_end = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius } in
+      let arc_start = line1_end in
+      let arc_mid =
+        {
+          x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' -. (arc_radius' *. 0.5 *. sqrt 2.0) +. via_offset;
+          y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+        }
       in
-      make_line ~start:{ x = straight_length; y = arc_radius }
-        ~end_:{ x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius }
-      :: make_arc
-           ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius }
-           ~mid:
-             {
-               x =
-                 -.next_straight_length
-                 -. (0.5 *. pitch)
-                 +. arc_radius'
-                 -. (arc_radius' *. 0.5 *. sqrt 2.0)
-                 +. via_offset;
-               y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
-             }
-           ~end_:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
-           ~radius:arc_radius'
+      let arc_end = { x = line_start_x; y = -.arc_clearance } in
+
+      let optional_line =
+        if arc_clearance <= 0. then None else Some (make_line ~start:optional_line_start ~end_:optional_line_end)
+      in
+
+      make_line ~start:line1_start ~end_:line1_end
+      :: make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius'
       :: cons optional_line []
     | false ->
+      (* Compute points for false case segments *)
+      let line_start = { x = straight_length; y = arc_radius } in
+      let line_end = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius } in
+      let arc_start = line_end in
+      let arc_mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch } in
+      let arc_end = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across } in
+
       [
-        make_line ~start:{ x = straight_length; y = arc_radius }
-          ~end_:{ x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
-        make_arc
-          ~start:{ x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius }
-          ~mid:{ x = -.straight_length -. arc_radius; y = 0.5 *. pitch }
-          ~end_:{ x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
-          ~radius:arc_radius;
+        make_line ~start:line_start ~end_:line_end;
+        make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius;
       ]
   in
   let main_segments =
-    make_line
-      ~start:
-        {
-          x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
-          y = -.arc_radius;
-        }
-      ~end_:{ x = straight_length; y = -.arc_radius }
-    :: make_arc
-         ~start:{ x = straight_length; y = -.arc_radius }
-         ~mid:{ x = straight_length +. arc_radius; y = 0.0 }
-         ~end_:{ x = straight_length; y = arc_radius } ~radius:arc_radius
+    (* Compute points for main segments *)
+    let main_line_start =
+      {
+        x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
+        y = -.arc_radius;
+      }
+    in
+    let main_line_end = { x = straight_length; y = -.arc_radius } in
+    let main_arc_start = main_line_end in
+    let main_arc_mid = { x = straight_length +. arc_radius; y = 0.0 } in
+    let main_arc_end = { x = straight_length; y = arc_radius } in
+
+    make_line ~start:main_line_start ~end_:main_line_end
+    :: make_arc ~start:main_arc_start ~mid:main_arc_mid ~end_:main_arc_end ~radius:arc_radius
     :: tail
   in
 
@@ -346,16 +355,21 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
         })
     in
 
+    (* Compute points for prepend segments *)
+    let prepend_line_start = main_axis_point in
+    let prepend_line_end = tangent_point in
+    let prepend_arc_start = tangent_point in
+    let prepend_arc_mid =
+      {
+        x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+        y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+      }
+    in
+    let prepend_arc_end = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius } in
+
     let all_segments =
-      make_line ~start:main_axis_point ~end_:tangent_point
-      :: make_arc ~start:tangent_point
-           ~mid:
-             {
-               x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-               y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-             }
-           ~end_:{ x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius }
-           ~radius:prepend_arc_radius
+      make_line ~start:prepend_line_start ~end_:prepend_line_end
+      :: make_arc ~start:prepend_arc_start ~mid:prepend_arc_mid ~end_:prepend_arc_end ~radius:prepend_arc_radius
       :: main_segments
     in
     let first_point = Some main_axis_point in
