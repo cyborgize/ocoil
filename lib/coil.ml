@@ -40,6 +40,11 @@ type 'a loop_result = {
   last_point : point option;
 }
 
+(* Helper functions to create path segments *)
+let make_line ~start ~end_point = Line { start; end_point }
+
+let make_arc ~start ~mid ~end_point ~radius = Arc { start; mid; end_point; radius }
+
 let calculate_spiral_length ~shape ~pitch ~turns ~is_inner =
   let op = if is_inner then ( +. ) else ( -. ) in
   let radial_expansion = 2.0 *. pitch *. turns in
@@ -97,7 +102,7 @@ let generate_round_loop ~radius ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_
       let mid_point = { x = mid_radius *. cos mid_angle; y = mid_radius *. sin mid_angle } in
       let end_point = { x = end_radius *. cos end_angle; y = end_radius *. sin end_angle } in
 
-      Arc { start = start_point; mid = mid_point; end_point; radius = mid_radius })
+      make_arc ~start:start_point ~mid:mid_point ~end_point ~radius:mid_radius)
   in
 
   let first_point = Some { x = current_radius *. cos angle_offset; y = current_radius *. sin angle_offset } in
@@ -117,26 +122,18 @@ let generate_square_loop ~size ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_w
   let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
   let segments =
     [
-      Line
-        {
-          start = { x = current_half_size; y = op (-.current_half_size) pitch };
-          end_point = { x = current_half_size; y = current_half_size };
-        };
-      Line
-        {
-          start = { x = current_half_size; y = current_half_size };
-          end_point = { x = -.current_half_size; y = current_half_size };
-        };
-      Line
-        {
-          start = { x = -.current_half_size; y = current_half_size };
-          end_point = { x = -.current_half_size; y = -.current_half_size };
-        };
-      Line
-        {
-          start = { x = -.current_half_size; y = -.current_half_size };
-          end_point = { x = next_half_size; y = -.current_half_size };
-        };
+      make_line
+        ~start:{ x = current_half_size; y = op (-.current_half_size) pitch }
+        ~end_point:{ x = current_half_size; y = current_half_size };
+      make_line
+        ~start:{ x = current_half_size; y = current_half_size }
+        ~end_point:{ x = -.current_half_size; y = current_half_size };
+      make_line
+        ~start:{ x = -.current_half_size; y = current_half_size }
+        ~end_point:{ x = -.current_half_size; y = -.current_half_size };
+      make_line
+        ~start:{ x = -.current_half_size; y = -.current_half_size }
+        ~end_point:{ x = next_half_size; y = -.current_half_size };
     ]
   in
 
@@ -152,23 +149,18 @@ let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_l
   let next_half_w = op (width *. 0.5) (pitch *. (turn_number +. 1.0)) in
   let segments =
     [
-      Line
-        {
-          start = { x = current_half_w; y = op (-.current_half_h) pitch };
-          end_point = { x = current_half_w; y = current_half_h };
-        };
-      Line
-        { start = { x = current_half_w; y = current_half_h }; end_point = { x = -.current_half_w; y = current_half_h } };
-      Line
-        {
-          start = { x = -.current_half_w; y = current_half_h };
-          end_point = { x = -.current_half_w; y = -.current_half_h };
-        };
-      Line
-        {
-          start = { x = -.current_half_w; y = -.current_half_h };
-          end_point = { x = next_half_w; y = -.current_half_h };
-        };
+      make_line
+        ~start:{ x = current_half_w; y = op (-.current_half_h) pitch }
+        ~end_point:{ x = current_half_w; y = current_half_h };
+      make_line
+        ~start:{ x = current_half_w; y = current_half_h }
+        ~end_point:{ x = -.current_half_w; y = current_half_h };
+      make_line
+        ~start:{ x = -.current_half_w; y = current_half_h }
+        ~end_point:{ x = -.current_half_w; y = -.current_half_h };
+      make_line
+        ~start:{ x = -.current_half_w; y = -.current_half_h }
+        ~end_point:{ x = next_half_w; y = -.current_half_h };
     ]
   in
 
@@ -269,68 +261,51 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
         | true -> []
         | false ->
           [
-            Line
-              {
-                start = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance };
-                end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 };
-              };
+            make_line
+              ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
+              ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 };
           ]
       in
-      Line
-        {
-          start = { x = straight_length; y = arc_radius };
-          end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius };
-        }
-      :: Arc
-           {
-             start = { x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius };
-             mid =
-               {
-                 x =
-                   -.next_straight_length
-                   -. (0.5 *. pitch)
-                   +. arc_radius'
-                   -. (arc_radius' *. 0.5 *. sqrt 2.0)
-                   +. via_offset;
-                 y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
-               };
-             end_point = { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance };
-             radius = arc_radius';
-           }
+      make_line ~start:{ x = straight_length; y = arc_radius }
+        ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius }
+      :: make_arc
+           ~start:{ x = -.next_straight_length -. (0.5 *. pitch) +. arc_radius' +. via_offset; y = arc_radius }
+           ~mid:
+             {
+               x =
+                 -.next_straight_length
+                 -. (0.5 *. pitch)
+                 +. arc_radius'
+                 -. (arc_radius' *. 0.5 *. sqrt 2.0)
+                 +. via_offset;
+               y = arc_radius -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+             }
+           ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = -.arc_clearance }
+           ~radius:arc_radius'
       :: tail
     | false ->
       [
-        Line
-          {
-            start = { x = straight_length; y = arc_radius };
-            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
-          };
-        Arc
-          {
-            start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
-            mid = { x = -.straight_length -. arc_radius; y = 0.5 *. pitch };
-            end_point = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across };
-            radius = arc_radius;
-          };
+        make_line ~start:{ x = straight_length; y = arc_radius }
+          ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius };
+        make_arc
+          ~start:{ x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius }
+          ~mid:{ x = -.straight_length -. arc_radius; y = 0.5 *. pitch }
+          ~end_point:{ x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
+          ~radius:arc_radius;
       ]
   in
   let main_segments =
-    Line
-      {
-        start =
-          {
-            x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
-            y = -.arc_radius;
-          };
-        end_point = { x = straight_length; y = -.arc_radius };
-      }
-    :: Arc
-         {
-           start = { x = straight_length; y = -.arc_radius };
-           mid = { x = straight_length +. arc_radius; y = 0.0 };
-           end_point = { x = straight_length; y = arc_radius };
-           radius = arc_radius;
-         }
+    make_line
+      ~start:
+        {
+          x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
+          y = -.arc_radius;
+        }
+      ~end_point:{ x = straight_length; y = -.arc_radius }
+    :: make_arc
+         ~start:{ x = straight_length; y = -.arc_radius }
+         ~mid:{ x = straight_length +. arc_radius; y = 0.0 }
+         ~end_point:{ x = straight_length; y = arc_radius } ~radius:arc_radius
     :: tail
   in
 
@@ -376,18 +351,15 @@ let generate_oval_loop' ~main_dim ~across_dim ~turn_number ~pitch ~is_inner ~is_
 
     let prepend_segments =
       [
-        Line { start = main_axis_point; end_point = tangent_point };
-        Arc
-          {
-            start = tangent_point;
-            mid =
-              {
-                x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-                y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
-              };
-            end_point = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius };
-            radius = prepend_arc_radius;
-          };
+        make_line ~start:main_axis_point ~end_point:tangent_point;
+        make_arc ~start:tangent_point
+          ~mid:
+            {
+              x = -.straight_length -. (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+              y = (0.5 *. pitch) -. (0.5 *. sqrt 2.0 *. prepend_arc_radius);
+            }
+          ~end_point:{ x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius }
+          ~radius:prepend_arc_radius;
       ]
     in
     let all_segments = prepend_segments @ main_segments in
