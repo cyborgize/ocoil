@@ -363,19 +363,19 @@ let create_fp_text text_content ~at ~layer ~uuid ?(text_type = `user) ?(unlocked
 (* Convert spiral segments to KiCad primitives *)
 let segment_to_primitive width_mm offset segment =
   match segment with
-  | Line { start; end_point } ->
+  | Line { start; end_ } ->
     `gr_line
       {
         start = (start.x *. 1000.0) -. offset.x, (start.y *. 1000.0) -. offset.y;
-        end_ = (end_point.x *. 1000.0) -. offset.x, (end_point.y *. 1000.0) -. offset.y;
+        end_ = (end_.x *. 1000.0) -. offset.x, (end_.y *. 1000.0) -. offset.y;
         width = width_mm;
       }
-  | Arc { start; mid; end_point; _ } ->
+  | Arc { start; mid; end_; _ } ->
     `gr_arc
       {
         start = (start.x *. 1000.0) -. offset.x, (start.y *. 1000.0) -. offset.y;
         mid = (mid.x *. 1000.0) -. offset.x, (mid.y *. 1000.0) -. offset.y;
-        end_ = (end_point.x *. 1000.0) -. offset.x, (end_point.y *. 1000.0) -. offset.y;
+        end_ = (end_.x *. 1000.0) -. offset.x, (end_.y *. 1000.0) -. offset.y;
         width = width_mm;
       }
 
@@ -383,18 +383,18 @@ let segment_to_primitive width_mm offset segment =
 let segment_to_footprint_primitive rand_state width_mm layer segment =
   let uuid = generate_uuid rand_state in
   match segment with
-  | Line { start; end_point } ->
+  | Line { start; end_ } ->
     `Line
       (create_fp_line
          ~start:(start.x *. 1000.0, start.y *. 1000.0)
-         ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
+         ~end_:(end_.x *. 1000.0, end_.y *. 1000.0)
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
-  | Arc { start; mid; end_point; _ } ->
+  | Arc { start; mid; end_; _ } ->
     `Arc
       (create_fp_arc
          ~start:(start.x *. 1000.0, start.y *. 1000.0)
          ~mid:(mid.x *. 1000.0, mid.y *. 1000.0)
-         ~end_:(end_point.x *. 1000.0, end_point.y *. 1000.0)
+         ~end_:(end_.x *. 1000.0, end_.y *. 1000.0)
          ~stroke_width:width_mm ~stroke_type:`solid ~layer ~uuid)
 
 (* Generate MFN string from parameters *)
