@@ -116,32 +116,6 @@ let generate_round_loop ~radius ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_
 
   { segments; first_point; last_point }
 
-let generate_square_loop ~size ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_width:_ ~clearance:_ =
-  let op = if is_inner then ( +. ) else ( -. ) in
-  let current_half_size = op (size *. 0.5) (pitch *. turn_number) in
-  let next_half_size = op (size *. 0.5) (pitch *. (turn_number +. 1.0)) in
-
-  (* Compute all points first *)
-  let p1 = { x = current_half_size; y = op (-.current_half_size) pitch } in
-  let p2 = { x = current_half_size; y = current_half_size } in
-  let p3 = { x = -.current_half_size; y = current_half_size } in
-  let p4 = { x = -.current_half_size; y = -.current_half_size } in
-  let p5 = { x = next_half_size; y = -.current_half_size } in
-
-  let segments =
-    [
-      make_line ~start:p1 ~end_:p2;
-      make_line ~start:p2 ~end_:p3;
-      make_line ~start:p3 ~end_:p4;
-      make_line ~start:p4 ~end_:p5;
-    ]
-  in
-
-  let first_point = Some p1 in
-  let last_point = Some p5 in
-
-  { segments; first_point; last_point }
-
 let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last:_ ~trace_width:_ ~clearance:_ =
   let op = if is_inner then ( +. ) else ( -. ) in
   let current_half_w = op (width *. 0.5) (pitch *. turn_number) in
@@ -421,7 +395,8 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~is_inner ~trace_width ~
     match shape with
     | Round { diameter } ->
       generate_round_loop ~radius:(diameter *. 0.5) ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
-    | Square { size } -> generate_square_loop ~size ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
+    | Square { size } ->
+      generate_rectangular_loop ~width:size ~height:size ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
     | Rectangular { width; height } ->
       generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_inner ~is_last ~trace_width ~clearance
     | Oval { width; height } ->
