@@ -405,7 +405,7 @@ let generate_mfn_string ~shape ~trace_width ~pitch ~turns ~layers =
     | Square { size } -> Printf.sprintf "%.0f" ((size +. trace_width) *. 1000.0)
     | Rectangular { width; height } ->
       Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
-    | Oval { width; height } ->
+    | Oval { width; height; corner_radius = _ } ->
       Printf.sprintf "%.0f%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
   in
   let layers_str = Printf.sprintf "S%d" layers in
@@ -515,7 +515,7 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~total_l
       | Square { size } -> Printf.sprintf "%.0fx%.0f" ((size +. trace_width) *. 1000.0) ((size +. trace_width) *. 1000.0)
       | Rectangular { width; height } ->
         Printf.sprintf "%.0fx%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
-      | Oval { width; height } ->
+      | Oval { width; height; corner_radius = _ } ->
         Printf.sprintf "%.0fx%.0f" ((width +. trace_width) *. 1000.0) ((height +. trace_width) *. 1000.0)
     in
     let width_str = Printf.sprintf "T%.1f" (trace_width *. 1000.0) in
@@ -537,7 +537,7 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~total_l
     | Round { diameter } -> diameter, diameter
     | Square { size } -> size, size
     | Rectangular { width; height } -> width, height
-    | Oval { width; height } -> width, height
+    | Oval { width; height; corner_radius = _ } -> width, height
   in
 
   (* Add clearance and trace width around the coil *)

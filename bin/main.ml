@@ -107,6 +107,13 @@ let oval_arg =
   let doc = "Oval coil with specified dimensions. Format: <width>x<height> (in mm)" in
   Arg.(value & opt (some oval_converter) None & info [ "oval" ] ~docv:"WIDTHxHEIGHT" ~doc)
 
+let corner_radius_arg =
+  let doc =
+    "Corner radius for oval coils. Use 0 for rectangular corners. Formats: <value>mm, <value>mil, or <value> (mm \
+     default)"
+  in
+  Arg.(value & opt (some dimension_converter) None & info [ "corner-radius" ] ~docv:"RADIUS" ~doc)
+
 let layers_arg =
   let doc = "Number of PCB layers (default: 1)" in
   Arg.(value & opt int 1 & info [ "layers" ] ~docv:"LAYERS" ~doc)
@@ -134,12 +141,12 @@ let output_arg =
   Arg.(value & opt string "-" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
 
 (* Helper function to extract coil shape from command line arguments *)
-let get_coil_shape round_opt square_opt rectangle_opt oval_opt =
+let get_coil_shape round_opt square_opt rectangle_opt oval_opt corner_radius_opt =
   match round_opt, square_opt, rectangle_opt, oval_opt with
   | Some diameter, None, None, None -> Coil.Round { diameter }
   | None, Some size, None, None -> Coil.Square { size }
   | None, None, Some (width, height), None -> Coil.Rectangular { width; height }
-  | None, None, None, Some (width, height) -> Coil.Oval { width; height }
+  | None, None, None, Some (width, height) -> Coil.Oval { width; height; corner_radius = corner_radius_opt }
   | None, None, None, None -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
   | _ -> failwith "Must specify exactly one coil shape: --round, --square, --rectangle, or --oval"
 
@@ -170,13 +177,14 @@ let coil_cmd =
     and+ square_opt = square_arg
     and+ rectangle_opt = rectangle_arg
     and+ oval_opt = oval_arg
+    and+ corner_radius_opt = corner_radius_arg
     and+ pitch = pitch_arg
     and+ turns = turns_arg
     and+ layers = layers_arg
     and+ width = width_arg
     and+ thickness = thickness_arg
     and+ temperature = temperature_arg in
-    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
+    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt corner_radius_opt in
     let single_layer_length = Coil.calculate_spiral_length ~shape ~pitch ~turns in
     let total_length = single_layer_length *. float_of_int layers in
     let resistance = Trace.calculate_resistance total_length width thickness temperature in
@@ -187,7 +195,7 @@ let coil_cmd =
       | Coil.Square { size } -> "square", Printf.sprintf "Size (outer): %.3f mm" (size *. 1000.0)
       | Coil.Rectangular { width; height } ->
         "rectangular", Printf.sprintf "Dimensions: %.3f mm × %.3f mm" (width *. 1000.0) (height *. 1000.0)
-      | Coil.Oval { width; height } ->
+      | Coil.Oval { width; height; corner_radius = _ } ->
         "oval", Printf.sprintf "Dimensions: %.3f mm × %.3f mm" (width *. 1000.0) (height *. 1000.0)
     in
     Printf.printf "Shape: %s, %s, Pitch: %.3f mm, Turns: %.3f\n" shape_str size_info (pitch *. 1000.0) turns;
@@ -208,6 +216,7 @@ let kicad_cmd =
     and+ square_opt = square_arg
     and+ rectangle_opt = rectangle_arg
     and+ oval_opt = oval_arg
+    and+ corner_radius_opt = corner_radius_arg
     and+ pitch = pitch_arg
     and+ turns = turns_arg
     and+ layers = layers_arg
@@ -216,7 +225,7 @@ let kicad_cmd =
     and+ clearance = clearance_arg
     and+ via_size = via_size_arg
     and+ output_file = output_arg in
-    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt in
+    let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt corner_radius_opt in
 
     (* Determine keep_layers (default to layers if not specified) *)
     let keep_layers = Option.value keep_layers_opt ~default:layers in
