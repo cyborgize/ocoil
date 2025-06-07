@@ -79,32 +79,6 @@ let calculate_spiral_length ~shape ~pitch ~turns =
   in
   avg_circumference *. turns
 
-let generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_last:_ ~trace_width:_ ~clearance:_ =
-  let current_half_w = (width *. 0.5) -. (pitch *. turn_number) in
-  let current_half_h = (height *. 0.5) -. (pitch *. turn_number) in
-  let next_half_w = (width *. 0.5) -. (pitch *. (turn_number +. 1.0)) in
-
-  (* Compute all points first *)
-  let p1 = { x = current_half_w; y = -.current_half_h -. pitch } in
-  let p2 = { x = current_half_w; y = current_half_h } in
-  let p3 = { x = -.current_half_w; y = current_half_h } in
-  let p4 = { x = -.current_half_w; y = -.current_half_h } in
-  let p5 = { x = next_half_w; y = -.current_half_h } in
-
-  let segments =
-    [
-      make_line ~start:p1 ~end_:p2;
-      make_line ~start:p2 ~end_:p3;
-      make_line ~start:p3 ~end_:p4;
-      make_line ~start:p4 ~end_:p5;
-    ]
-  in
-
-  let first_point = Some p1 in
-  let last_point = Some p5 in
-
-  { segments; first_point; last_point }
-
 (* Transformation matrix type: 2x2 matrix as (a, b, c, d) where:
    [a b] [x]   [a*x + b*y]
    [c d] [y] = [c*x + d*y]
@@ -188,42 +162,40 @@ let is_segment_degenerate = function
 let map_good_segment segment = if is_segment_degenerate segment then None else Some segment
 
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
-let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trace_width ~clearance
+let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trace_width ~clearance
   ~layer_index ~via_copper_size ~total_layers () =
   let current_half_main = (main_dim *. 0.5) -. (pitch *. turn_number) in
   let current_half_across = (across_dim *. 0.5) -. (pitch *. turn_number) in
-  let next_half_main = (main_dim *. 0.5) -. (pitch *. (turn_number +. 1.0)) in
+  let _next_half_main = (main_dim *. 0.5) -. (pitch *. (turn_number +. 1.0)) in
   let next_half_across = (across_dim *. 0.5) -. (pitch *. (turn_number +. 1.0)) in
-
-  let corner_radius = Some ((0.5 *. across_dim) -. 0.00025) in
-  let arc_radius, next_arc_radius =
+  let arc_radius =
     match corner_radius with
-    | Some corner_radius -> corner_radius -. (pitch *. turn_number), corner_radius -. (pitch *. (turn_number +. 1.0))
-    | None -> current_half_across, next_half_across
+    | Some corner_radius -> corner_radius -. (pitch *. turn_number)
+    | None -> current_half_across
   in
+  let arc_radius = max 0. arc_radius in
+  let next_arc_radius = max 0. (arc_radius -. pitch) in
+  let mid_arc_radius = 0.5 *. (arc_radius +. next_arc_radius) in
   let straight_length = current_half_main -. arc_radius in
-  let next_straight_length = next_half_main -. next_arc_radius in
-
+  let mid_straight_length = current_half_main -. mid_arc_radius in
+  let next_straight_length = straight_length -. pitch in
   (* Check if this is the first loop on first layer or last odd layer *)
   let is_first_loop = turn_number = 0.0 in
   let is_last_layer = layer_index = total_layers - 1 in
   let is_last_layer_odd = is_last_layer && layer_index mod 2 = 1 in
   let use_main_coordinate = is_first_loop && (layer_index = 0 || is_last_layer_odd) in
-
   (* Check if we need to prepend arc and tangent line for first loop on all layers except first and last *)
   let is_first_layer = layer_index = 0 in
   let prepend_arc_line = is_first_loop && (not is_first_layer) && not is_last_layer in
-
   (* Calculate via staggering offset along main axis *)
-  let tail =
+  let tail, last_point =
     match is_last with
     | true ->
-      let arc_clearance = min 0. (arc_radius -. clearance -. trace_width) in
-      let arc_radius' = arc_radius +. arc_clearance in
+      let arc_clearance = min 0. (current_half_across -. clearance -. trace_width) in
+      let arc_radius' = max 0. (arc_radius +. arc_clearance) in
       let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      let line_start_x = -.next_straight_length -. (0.5 *. pitch) +. via_offset in
+      let line_start_x = -.mid_straight_length +. via_offset in
       let arc_center_x = line_start_x +. arc_radius' in
-
       (* Compute points for tail segments *)
       let optional_line_start = { x = line_start_x; y = current_half_across -. arc_radius' } in
       let optional_line_end = { x = line_start_x; y = -.arc_clearance } in
@@ -237,108 +209,94 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
         }
       in
       let arc_end = { x = line_start_x; y = current_half_across -. arc_radius' } in
-
-      [
-        make_line ~start:line1_start ~end_:line1_end;
-        make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius';
-        make_line ~start:optional_line_start ~end_:optional_line_end;
-      ]
+      let segments =
+        [
+          make_line ~start:line1_start ~end_:line1_end;
+          make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius';
+          make_line ~start:optional_line_start ~end_:optional_line_end;
+        ]
+      in
+      let last_point =
+        let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
+        Some { x = -.mid_straight_length +. via_offset; y = 0.0 }
+      in
+      segments, last_point
     | false ->
       let line_start = { x = straight_length; y = current_half_across } in
-      let line_end = { x = -.next_straight_length -. (0.5 *. pitch); y = current_half_across } in
-
+      let line_end = { x = -.mid_straight_length; y = current_half_across } in
       (* Handle tail corner arcs based on next_arc_radius *)
       let tail_corner_segments =
-        if is_length_nearly_zero next_arc_radius then (
-          (* Zero corner radius: create rectangular corner with straight lines *)
-          let corner_line_start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius } in
-          let corner_line_end = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across } in
-          [ make_line ~start:corner_line_start ~end_:corner_line_end ])
-        else (
-          (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
-          let tail_arc_start = line_end in
-
-          (* The arc center is at the corner, offset by 0.5 * pitch *)
-          let arc_center_x = -.next_straight_length -. (2. *. (0.5 *. pitch)) in
-          let first_arc_center_y = (0.5 *. pitch) +. next_half_across -. next_arc_radius in
-          let second_arc_center_y = (0.5 *. pitch) -. next_half_across +. next_arc_radius in
-
-          (* First half-arc: from top (arc_radius) to middle (0.5 * pitch) *)
-          let first_arc_start = tail_arc_start in
-          let first_arc_end = { x = arc_center_x -. next_arc_radius; y = first_arc_center_y } in
-          let first_arc_mid =
-            {
-              x = arc_center_x -. (next_arc_radius *. sqrt 2.0 /. 2.0);
-              y = first_arc_center_y +. (next_arc_radius *. sqrt 2.0 /. 2.0);
-            }
-          in
-
-          (* Second half-arc: from middle (0.5 * pitch) to bottom (-.next_half_across) *)
-          let second_arc_start = { x = arc_center_x -. next_arc_radius; y = second_arc_center_y } in
-          let second_arc_end = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across } in
-          let second_arc_mid =
-            {
-              x = arc_center_x -. (next_arc_radius *. sqrt 2.0 /. 2.0);
-              y = second_arc_center_y -. (next_arc_radius *. sqrt 2.0 /. 2.0);
-            }
-          in
-
-          [
-            make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:next_arc_radius;
-            make_line ~start:first_arc_end ~end_:second_arc_start;
-            make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:next_arc_radius;
-          ])
+        (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
+        let tail_arc_start = line_end in
+        (* The arc center is at the corner, offset by 0.5 * pitch *)
+        let arc_center_x = -.mid_straight_length in
+        let first_arc_center_y = current_half_across -. mid_arc_radius in
+        let second_arc_center_y = -.next_half_across +. mid_arc_radius in
+        (* First half-arc: from top (arc_radius) to middle (0.5 * pitch) *)
+        let first_arc_start = tail_arc_start in
+        let first_arc_end = { x = arc_center_x -. mid_arc_radius; y = first_arc_center_y } in
+        let first_arc_mid =
+          {
+            x = arc_center_x -. (mid_arc_radius *. sqrt 2.0 /. 2.0);
+            y = first_arc_center_y +. (mid_arc_radius *. sqrt 2.0 /. 2.0);
+          }
+        in
+        (* Second half-arc: from middle (0.5 * pitch) to bottom (-.next_half_across) *)
+        let second_arc_start = { x = arc_center_x -. mid_arc_radius; y = second_arc_center_y } in
+        let second_arc_end = { x = -.mid_straight_length; y = -.next_half_across } in
+        let second_arc_mid =
+          {
+            x = arc_center_x -. (mid_arc_radius *. sqrt 2.0 /. 2.0);
+            y = second_arc_center_y -. (mid_arc_radius *. sqrt 2.0 /. 2.0);
+          }
+        in
+        [
+          make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:mid_arc_radius;
+          make_line ~start:first_arc_end ~end_:second_arc_start;
+          make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:mid_arc_radius;
+        ]
       in
-
-      make_line ~start:line_start ~end_:line_end :: tail_corner_segments
+      let segments = make_line ~start:line_start ~end_:line_end :: tail_corner_segments in
+      let last_point = Some { x = -.next_straight_length; y = -.next_half_across } in
+      segments, last_point
   in
   let segments =
     (* Compute points for main segments *)
     let main_line_start =
       {
-        x = (if use_main_coordinate then -.current_half_main else -.straight_length -. (0.5 *. pitch));
+        x =
+          (if use_main_coordinate then -.current_half_main
+           else -.straight_length -. pitch +. (arc_radius -. mid_arc_radius));
         y = -.current_half_across;
       }
     in
     let main_line_end = { x = straight_length; y = -.current_half_across } in
-
     (* Handle corner arcs based on corner radius *)
     let segments =
-      if is_length_nearly_zero arc_radius then (
-        (* Zero corner radius: create rectangular corner with straight lines *)
-        let corner_line_start = { x = straight_length; y = -.current_half_across } in
-        let corner_line_end = { x = straight_length; y = current_half_across } in
-        make_line ~start:corner_line_start ~end_:corner_line_end :: tail)
-      else (
-        (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
-        let main_arc_start = main_line_end in
-
-        (* The arc center is at the corner of the original oval *)
-        let arc_center_x = straight_length in
-        let arc_center_y = current_half_across -. arc_radius in
-
-        (* First half-arc: from bottom (-current_half_across) to middle (0) *)
-        let first_arc_start = main_arc_start in
-        let first_arc_end = { x = arc_center_x +. arc_radius; y = -.arc_center_y } in
-        let first_arc_mid =
-          { x = arc_center_x +. (arc_radius *. sqrt 2.0 /. 2.0); y = -.arc_center_y -. (arc_radius *. sqrt 2.0 /. 2.0) }
-        in
-
-        (* Second half-arc: from middle (0) to top (+current_half_across) *)
-        let second_arc_start = { x = arc_center_x +. arc_radius; y = arc_center_y } in
-        let second_arc_end = { x = straight_length; y = current_half_across } in
-        let second_arc_mid =
-          { x = arc_center_x +. (arc_radius *. sqrt 2.0 /. 2.0); y = arc_center_y +. (arc_radius *. sqrt 2.0 /. 2.0) }
-        in
-
-        make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:arc_radius
-        :: make_line ~start:first_arc_end ~end_:second_arc_start
-        :: make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:arc_radius
-        :: tail)
+      (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
+      let main_arc_start = main_line_end in
+      (* The arc center is at the corner of the original oval *)
+      let arc_center_x = straight_length in
+      let arc_center_y = current_half_across -. arc_radius in
+      (* First half-arc: from bottom (-current_half_across) to middle (0) *)
+      let first_arc_start = main_arc_start in
+      let first_arc_end = { x = arc_center_x +. arc_radius; y = -.arc_center_y } in
+      let first_arc_mid =
+        { x = arc_center_x +. (arc_radius *. sqrt 2.0 /. 2.0); y = -.arc_center_y -. (arc_radius *. sqrt 2.0 /. 2.0) }
+      in
+      (* Second half-arc: from middle (0) to top (+current_half_across) *)
+      let second_arc_start = { x = arc_center_x +. arc_radius; y = arc_center_y } in
+      let second_arc_end = { x = straight_length; y = current_half_across } in
+      let second_arc_mid =
+        { x = arc_center_x +. (arc_radius *. sqrt 2.0 /. 2.0); y = arc_center_y +. (arc_radius *. sqrt 2.0 /. 2.0) }
+      in
+      make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:arc_radius
+      :: make_line ~start:first_arc_end ~end_:second_arc_start
+      :: make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:arc_radius
+      :: tail
     in
     make_line ~start:main_line_start ~end_:main_line_end :: segments
   in
-
   let segments, first_point =
     (* Maybe prepend arc and tangent line for odd layers (except last) *)
     if prepend_arc_line then (
@@ -356,12 +314,10 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
       (* Y offset from point to arc center *)
       let dx_to_center = sqrt ((desired_distance *. desired_distance) -. (dy_to_center *. dy_to_center)) in
       let main_axis_point = { x = arc_center_x -. dx_to_center; y = desired_y } in
-
       (* Calculate tangent point on the arc *)
       let dx = main_axis_point.x -. arc_center_x in
       let dy = main_axis_point.y -. arc_center_y in
       let distance = sqrt ((dx *. dx) +. (dy *. dy)) in
-
       let tangent_point =
         if distance <= prepend_arc_radius then
           (* Point is inside or on the circle, fall back to perpendicular point *)
@@ -379,7 +335,6 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
             y = arc_center_y +. ((dy *. cos_angle) +. (dx *. sin_angle));
           })
       in
-
       (* Compute points for prepend segments *)
       let prepend_line_start = main_axis_point in
       let prepend_line_end = tangent_point in
@@ -391,7 +346,6 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
         }
       in
       let prepend_arc_end = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius } in
-
       let all_segments =
         make_line ~start:prepend_line_start ~end_:prepend_line_end
         :: make_arc ~start:prepend_arc_start ~mid:prepend_arc_mid ~end_:prepend_arc_end ~radius:prepend_arc_radius
@@ -408,12 +362,6 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
           }
       in
       segments, first_point)
-  in
-  let last_point =
-    if is_last then (
-      let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      Some { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
-    else Some { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
   in
   { segments = List.filter_map map_good_segment segments; first_point; last_point }
 
@@ -444,9 +392,11 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance 
       generate_oval_loop ~width:diameter ~height:diameter ~turn_number ~pitch ~is_last ~trace_width ~clearance
         ~layer_index ~via_copper_size ~total_layers ()
     | Square { size } ->
-      generate_rectangular_loop ~width:size ~height:size ~turn_number ~pitch ~is_last ~trace_width ~clearance
+      generate_oval_loop ~corner_radius:0.0 ~width:size ~height:size ~turn_number ~pitch ~is_last ~trace_width
+        ~clearance ~layer_index ~via_copper_size ~total_layers ()
     | Rectangular { width; height } ->
-      generate_rectangular_loop ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance
+      generate_oval_loop ~corner_radius:0.0 ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance
+        ~layer_index ~via_copper_size ~total_layers ()
     | Oval { width; height; corner_radius } ->
       generate_oval_loop ?corner_radius ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance ~layer_index
         ~via_copper_size ~total_layers ()
