@@ -173,6 +173,7 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
     | Some corner_radius -> corner_radius -. (pitch *. turn_number)
     | None -> current_half_across
   in
+  let prev_mid_arc_radius = 0.5 *. (max 0. (arc_radius +. pitch) +. max 0. arc_radius) in
   let arc_radius = max 0. arc_radius in
   let next_arc_radius = max 0. (arc_radius -. pitch) in
   let mid_arc_radius = 0.5 *. (arc_radius +. next_arc_radius) in
@@ -191,10 +192,24 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
   let tail, last_point =
     match is_last with
     | true ->
+      let via_spacing =
+        mid_arc_radius
+        -. max 0. ((0.5 *. (trace_width +. max (2. *. pitch) (via_copper_size +. (2. *. clearance)))) -. pitch)
+      in
+      let arc_center_y = -.next_half_across +. mid_arc_radius in
+      let line_start_x =
+        match arc_center_y < 0. with
+        | true -> -.mid_straight_length -. via_spacing
+        | false ->
+          -.mid_straight_length
+          -. sqrt
+               ((via_spacing *. via_spacing)
+               -. ((current_half_across -. mid_arc_radius) *. (current_half_across -. mid_arc_radius)))
+      in
       let arc_clearance = min 0. (current_half_across -. clearance -. trace_width) in
-      let arc_radius' = max 0. (arc_radius +. arc_clearance) in
+      let arc_radius' = max 0. (mid_arc_radius +. arc_clearance) in
       let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      let line_start_x = -.mid_straight_length +. via_offset in
+      let line_start_x = line_start_x +. via_offset in
       let arc_center_x = line_start_x +. arc_radius' in
       (* Compute points for tail segments *)
       let optional_line_start = { x = line_start_x; y = current_half_across -. arc_radius' } in
@@ -216,10 +231,7 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
           make_line ~start:optional_line_start ~end_:optional_line_end;
         ]
       in
-      let last_point =
-        let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-        Some { x = -.mid_straight_length +. via_offset; y = 0.0 }
-      in
+      let last_point = Some { x = line_start_x; y = 0.0 } in
       segments, last_point
     | false ->
       let line_start = { x = straight_length; y = current_half_across } in
@@ -266,7 +278,7 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
       {
         x =
           (if use_main_coordinate then -.current_half_main
-           else -.straight_length -. pitch +. (arc_radius -. mid_arc_radius));
+           else -.straight_length -. pitch +. (prev_mid_arc_radius -. arc_radius));
         y = -.current_half_across;
       }
     in
