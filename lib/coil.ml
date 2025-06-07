@@ -177,6 +177,16 @@ let is_line_nearly_zero ~start ~end_ =
 (* Helper function to check if a scalar length is nearly zero *)
 let is_length_nearly_zero length = abs_float length < 1e-6
 
+(* Helper function to check if a path segment is degenerate *)
+let is_segment_degenerate = function
+  | Line { start; end_ } -> is_line_nearly_zero ~start ~end_
+  | Arc { start; end_; radius; _ } ->
+    (* Arc is degenerate if start and end are the same or radius is nearly zero *)
+    is_line_nearly_zero ~start ~end_ || is_length_nearly_zero radius
+
+(* Helper function to map out degenerate segments *)
+let map_good_segment segment = if is_segment_degenerate segment then None else Some segment
+
 (* Always assumes horizontal oval (main_dim >= across_dim) *)
 let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trace_width ~clearance
   ~layer_index ~via_copper_size ~total_layers () =
@@ -228,34 +238,14 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
       in
       let arc_end = { x = line_start_x; y = current_half_across -. arc_radius' } in
 
-      let optional_line =
-        if is_line_nearly_zero ~start:optional_line_start ~end_:optional_line_end then None
-        else Some (make_line ~start:optional_line_start ~end_:optional_line_end)
-      in
-
-      (* Skip the straight line if it's degenerate *)
-      let optional_first_line =
-        if is_line_nearly_zero ~start:line1_start ~end_:line1_end then None
-        else Some (make_line ~start:line1_start ~end_:line1_end)
-      in
-
       [
-        optional_first_line;
-        Some
-          (make_arc
-             ~start:(if optional_first_line = None then line1_start else arc_start)
-             ~mid:arc_mid ~end_:arc_end ~radius:arc_radius');
-        optional_line;
+        make_line ~start:line1_start ~end_:line1_end;
+        make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius';
+        make_line ~start:optional_line_start ~end_:optional_line_end;
       ]
     | false ->
       let line_start = { x = straight_length; y = current_half_across } in
       let line_end = { x = -.next_straight_length -. (0.5 *. pitch); y = current_half_across } in
-
-      (* Skip the straight line if it's degenerate *)
-      let optional_tail_line =
-        if is_line_nearly_zero ~start:line_start ~end_:line_end then None
-        else Some (make_line ~start:line_start ~end_:line_end)
-      in
 
       (* Handle tail corner arcs based on next_arc_radius *)
       let tail_corner_segments =
@@ -263,11 +253,7 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
           (* Zero corner radius: create rectangular corner with straight lines *)
           let corner_line_start = { x = -.next_straight_length -. (0.5 *. pitch); y = arc_radius } in
           let corner_line_end = { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across } in
-          let optional_corner_line =
-            if is_line_nearly_zero ~start:corner_line_start ~end_:corner_line_end then None
-            else Some (make_line ~start:corner_line_start ~end_:corner_line_end)
-          in
-          [ optional_corner_line ])
+          [ make_line ~start:corner_line_start ~end_:corner_line_end ])
         else (
           (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
           let tail_arc_start = line_end in
@@ -297,26 +283,14 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
             }
           in
 
-          (* Optional connecting line between the two half-arcs *)
-          let optional_connecting_line =
-            if is_line_nearly_zero ~start:first_arc_end ~end_:second_arc_start then None
-            else Some (make_line ~start:first_arc_end ~end_:second_arc_start)
-          in
-
-          let first_arc =
-            Some
-              (make_arc
-                 ~start:(if optional_tail_line = None then line_start else first_arc_start)
-                 ~mid:first_arc_mid ~end_:first_arc_end ~radius:next_arc_radius)
-          in
-          let second_arc =
-            Some (make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:next_arc_radius)
-          in
-
-          [ first_arc; optional_connecting_line; second_arc ])
+          [
+            make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:next_arc_radius;
+            make_line ~start:first_arc_end ~end_:second_arc_start;
+            make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:next_arc_radius;
+          ])
       in
 
-      optional_tail_line :: tail_corner_segments
+      make_line ~start:line_start ~end_:line_end :: tail_corner_segments
   in
   let segments =
     (* Compute points for main segments *)
@@ -328,23 +302,13 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
     in
     let main_line_end = { x = straight_length; y = -.current_half_across } in
 
-    (* Skip the main straight line if it's degenerate *)
-    let optional_main_line =
-      if is_line_nearly_zero ~start:main_line_start ~end_:main_line_end then None
-      else Some (make_line ~start:main_line_start ~end_:main_line_end)
-    in
-
     (* Handle corner arcs based on corner radius *)
     let segments =
       if is_length_nearly_zero arc_radius then (
         (* Zero corner radius: create rectangular corner with straight lines *)
         let corner_line_start = { x = straight_length; y = -.current_half_across } in
         let corner_line_end = { x = straight_length; y = current_half_across } in
-        let optional_corner_line =
-          if is_line_nearly_zero ~start:corner_line_start ~end_:corner_line_end then None
-          else Some (make_line ~start:corner_line_start ~end_:corner_line_end)
-        in
-        optional_corner_line :: tail)
+        make_line ~start:corner_line_start ~end_:corner_line_end :: tail)
       else (
         (* Non-zero corner radius: split into two half-arcs with optional connecting line *)
         let main_arc_start = main_line_end in
@@ -367,25 +331,12 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
           { x = arc_center_x +. (arc_radius *. sqrt 2.0 /. 2.0); y = arc_center_y +. (arc_radius *. sqrt 2.0 /. 2.0) }
         in
 
-        (* Optional connecting line between the two half-arcs *)
-        let optional_connecting_line =
-          if is_line_nearly_zero ~start:first_arc_end ~end_:second_arc_start then None
-          else Some (make_line ~start:first_arc_end ~end_:second_arc_start)
-        in
-
-        let first_arc =
-          Some
-            (make_arc
-               ~start:(if optional_main_line = None then main_line_start else first_arc_start)
-               ~mid:first_arc_mid ~end_:first_arc_end ~radius:arc_radius)
-        in
-        let second_arc =
-          Some (make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:arc_radius)
-        in
-
-        first_arc :: optional_connecting_line :: second_arc :: tail)
+        make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:arc_radius
+        :: make_line ~start:first_arc_end ~end_:second_arc_start
+        :: make_arc ~start:second_arc_start ~mid:second_arc_mid ~end_:second_arc_end ~radius:arc_radius
+        :: tail)
     in
-    optional_main_line :: segments
+    make_line ~start:main_line_start ~end_:main_line_end :: segments
   in
 
   let segments, first_point =
@@ -442,9 +393,8 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
       let prepend_arc_end = { x = -.straight_length -. (0.5 *. pitch); y = -.arc_radius } in
 
       let all_segments =
-        Some (make_line ~start:prepend_line_start ~end_:prepend_line_end)
-        :: Some
-             (make_arc ~start:prepend_arc_start ~mid:prepend_arc_mid ~end_:prepend_arc_end ~radius:prepend_arc_radius)
+        make_line ~start:prepend_line_start ~end_:prepend_line_end
+        :: make_arc ~start:prepend_arc_start ~mid:prepend_arc_mid ~end_:prepend_arc_end ~radius:prepend_arc_radius
         :: segments
       in
       let first_point = Some main_axis_point in
@@ -465,7 +415,7 @@ let generate_oval_loop' ?corner_radius:_ ~main_dim ~across_dim ~turn_number ~pit
       Some { x = -.next_straight_length -. (0.5 *. pitch) +. via_offset; y = 0.0 })
     else Some { x = -.next_straight_length -. (0.5 *. pitch); y = -.next_half_across }
   in
-  { segments = List.filter_map Fun.id segments; first_point; last_point }
+  { segments = List.filter_map map_good_segment segments; first_point; last_point }
 
 let generate_oval_loop ?corner_radius ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance ~layer_index
   ~via_copper_size ~total_layers () =
