@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This OCaml project provides a command-line tool for PCB design calculations with three main functions:
+OCoil is an OCaml command-line tool for PCB design calculations with three main functions:
 
 1. **Trace resistance calculation** - Calculate electrical resistance of copper traces with temperature compensation
 2. **Spiral coil resistance calculation** - Calculate total resistance of multi-turn spiral coils

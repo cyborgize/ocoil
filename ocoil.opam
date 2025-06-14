@@ -1,0 +1,41 @@
+opam-version: "2.0"
+name: "ocoil"
+version: "1.0.0"
+synopsis: "OCaml tool for copper trace resistance calculations and spiral coil footprint generation"
+description: """
+OCoil is a command-line tool for PCB (Printed Circuit Board) design calculations
+that provides three main functions:
+
+1. Trace resistance calculation - Calculate electrical resistance of copper traces with temperature compensation
+2. Spiral coil resistance calculation - Calculate total resistance of multi-turn spiral coils  
+3. KiCad footprint generation - Generate .kicad_mod files for multi-layer spiral coil footprints
+
+The tool supports multiple coil shapes (Round, Square, Rectangular, Oval) with configurable
+corner radii, multi-layer PCB designs with automatic via generation, and flexible unit
+parsing (mm, mil, oz, um). It can generate complex spiral coil footprints for KiCad with
+proper layer assignment, via placement, and geometric transformations.
+"""
+author: "Raman Varabets <roman.vorobets@gmail.com>"
+maintainer: "Raman Varabets <roman.vorobets@gmail.com>"
+license: "Apache-2.0"
+homepage: "https://github.com/cyborgize/ocoil"
+bug-reports: "https://github.com/cyborgize/ocoil/issues"
+dev-repo: "git+https://github.com/cyborgize/ocoil.git"
+
+depends: [
+  "ocaml" {>= "4.14.0"}
+  "dune" {>= "3.0"}
+  "cmdliner" {>= "1.3.0"}
+  "sexplib0"
+  "ppx_sexp_conv"
+  "uuidm"
+]
+
+build: [
+  ["dune" "subst"] {dev}
+  ["dune" "build" "-p" name "-j" jobs]
+]
+
+install: [
+  ["dune" "install" "-p" name]
+]

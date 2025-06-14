@@ -1,5 +1,5 @@
 open Cmdliner
-open Copper_trace_lib
+open Ocoil_lib
 
 let parse_thickness s =
   let len = String.length s in
@@ -257,7 +257,7 @@ let kicad_cmd =
 (* Main command group *)
 let main_cmd =
   let doc = "Calculate resistance of copper traces and coils" in
-  let info = Cmd.info "copper_trace" ~doc in
+  let info = Cmd.info "ocoil" ~doc in
   Cmd.group info [ trace_cmd; coil_cmd; kicad_cmd ]
 
 let () = exit (Cmd.eval main_cmd)

@@ -1,5 +1,5 @@
 (executable
- (public_name copper_trace)
+ (public_name ocoil)
  (name main)
- (package copper_trace)
- (libraries copper_trace_lib cmdliner))
+ (package ocoil)
+ (libraries ocoil_lib cmdliner))
