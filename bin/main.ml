@@ -140,6 +140,31 @@ let output_arg =
   let doc = "Output file for KiCad footprint (default: stdout, use \"-\" for stdout)" in
   Arg.(value & opt string "-" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
 
+let parse_pin_side s =
+  match String.lowercase_ascii s with
+  | "left" -> Ok Ocoil_lib.Coil.Left
+  | "right" -> Ok Ocoil_lib.Coil.Right
+  | "top" -> Ok Ocoil_lib.Coil.Top
+  | "bottom" -> Ok Ocoil_lib.Coil.Bottom
+  | _ -> Error (`Msg (Printf.sprintf "Invalid pin-side value: %s. Must be one of: left, right, top, bottom" s))
+
+let pin_side_converter =
+  Arg.conv
+    ( parse_pin_side,
+      fun ppf side ->
+        let s =
+          match side with
+          | Ocoil_lib.Coil.Left -> "left"
+          | Ocoil_lib.Coil.Right -> "right"
+          | Ocoil_lib.Coil.Top -> "top"
+          | Ocoil_lib.Coil.Bottom -> "bottom"
+        in
+        Format.fprintf ppf "%s" s )
+
+let pin_side_arg =
+  let doc = "Side on which to place the pins: left, right, top, or bottom (default: left)" in
+  Arg.(value & opt pin_side_converter Ocoil_lib.Coil.Left & info [ "pin-side" ] ~docv:"SIDE" ~doc)
+
 (* Helper function to extract coil shape from command line arguments *)
 let get_coil_shape round_opt square_opt rectangle_opt oval_opt corner_radius_opt =
   match round_opt, square_opt, rectangle_opt, oval_opt with
@@ -224,6 +249,7 @@ let kicad_cmd =
     and+ width = width_arg
     and+ clearance = clearance_arg
     and+ via_size = via_size_arg
+    and+ pin_side = pin_side_arg
     and+ output_file = output_arg in
     let shape = get_coil_shape round_opt square_opt rectangle_opt oval_opt corner_radius_opt in
 
@@ -247,7 +273,7 @@ let kicad_cmd =
     let output_channel = if actual_output_file = "-" then stdout else open_out actual_output_file in
 
     Kicad.generate_footprint output_channel ~shape ~trace_width:width ~pitch ~turns ~total_layers:layers ~keep_layers
-      ~clearance ~via_size;
+      ~clearance ~via_size ~pin_side;
 
     (* Close file if it's not stdout *)
     if actual_output_file <> "-" then close_out output_channel

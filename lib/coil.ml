@@ -1,3 +1,9 @@
+type pin_side =
+  | Left
+  | Right
+  | Top
+  | Bottom
+
 type coil_shape =
   | Round of { diameter : float }
   | Square of { size : float }
@@ -90,6 +96,10 @@ let identity = 1.0, 0.0, 0.0, 1.0 (* Identity matrix (no transformation) *)
 let mirror_x_axis = 1.0, 0.0, 0.0, -1.0 (* Mirror across X axis (flip Y coordinates) *)
 let mirror_y_axis = -1.0, 0.0, 0.0, 1.0 (* Mirror across Y axis (flip X coordinates) *)
 let swap_xy = 0.0, 1.0, 1.0, 0.0 (* Swap X and Y coordinates *)
+
+(* Compose two transformation matrices: result = m2 * m1 (apply m1 first, then m2) *)
+let compose_transform (a2, b2, c2, d2) (a1, b1, c1, d1) =
+  (a2 *. a1) +. (b2 *. c1), (a2 *. b1) +. (b2 *. d1), (c2 *. a1) +. (d2 *. c1), (c2 *. b1) +. (d2 *. d1)
 
 (* Apply transformation to a point using matrix multiplication *)
 let transform_point (a, b, c, d) point = { x = (a *. point.x) +. (b *. point.y); y = (c *. point.x) +. (d *. point.y) }
@@ -380,14 +390,22 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
   in
   { segments = List.filter_map map_good_segment segments; first_point; last_point }
 
-let generate_oval_loop ?corner_radius ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance ~layer_index
-  ~via_copper_size ~total_layers () =
+let generate_oval_loop ?corner_radius ~width ~height ~pin_side ~turn_number ~pitch ~is_last ~trace_width ~clearance
+  ~layer_index ~via_copper_size ~total_layers () =
+  (* Determine main_dim, across_dim, and transformation based on pin_side *)
   let main_dim, across_dim, transformation =
-    if width >= height then
-      (* Horizontal oval: no transformation needed *)
+    match pin_side with
+    | Left ->
+      (* Pins on left: main axis is horizontal (width) *)
       width, height, identity
-    else
-      (* Vertical oval: swap dimensions and apply coordinate transformation *)
+    | Right ->
+      (* Pins on right: main axis is horizontal (width), but mirror horizontally *)
+      width, height, mirror_y_axis
+    | Top ->
+      (* Pins on top: main axis is vertical (height), swap and mirror *)
+      height, width, compose_transform mirror_y_axis swap_xy
+    | Bottom ->
+      (* Pins on bottom: main axis is vertical (height), just swap *)
       height, width, swap_xy
   in
   let loop_result =
@@ -399,22 +417,22 @@ let generate_oval_loop ?corner_radius ~width ~height ~turn_number ~pitch ~is_las
   let transformed_last_point = Option.map (transform_point transformation) loop_result.last_point in
   { segments = transformed_segments; first_point = transformed_first_point; last_point = transformed_last_point }
 
-let generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance ~layer_index ~via_copper_size
+let generate_spiral_segments_layer ~shape ~pin_side ~pitch ~turns ~trace_width ~clearance ~layer_index ~via_copper_size
   ~total_layers =
   let loop_generator turn_number is_last =
     match shape with
     | Round { diameter } ->
-      generate_oval_loop ~width:diameter ~height:diameter ~turn_number ~pitch ~is_last ~trace_width ~clearance
+      generate_oval_loop ~width:diameter ~height:diameter ~pin_side ~turn_number ~pitch ~is_last ~trace_width ~clearance
         ~layer_index ~via_copper_size ~total_layers ()
     | Square { size } ->
-      generate_oval_loop ~corner_radius:0.0 ~width:size ~height:size ~turn_number ~pitch ~is_last ~trace_width
+      generate_oval_loop ~corner_radius:0.0 ~width:size ~height:size ~pin_side ~turn_number ~pitch ~is_last ~trace_width
         ~clearance ~layer_index ~via_copper_size ~total_layers ()
     | Rectangular { width; height } ->
-      generate_oval_loop ~corner_radius:0.0 ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance
-        ~layer_index ~via_copper_size ~total_layers ()
+      generate_oval_loop ~corner_radius:0.0 ~width ~height ~pin_side ~turn_number ~pitch ~is_last ~trace_width
+        ~clearance ~layer_index ~via_copper_size ~total_layers ()
     | Oval { width; height; corner_radius } ->
-      generate_oval_loop ?corner_radius ~width ~height ~turn_number ~pitch ~is_last ~trace_width ~clearance ~layer_index
-        ~via_copper_size ~total_layers ()
+      generate_oval_loop ?corner_radius ~width ~height ~pin_side ~turn_number ~pitch ~is_last ~trace_width ~clearance
+        ~layer_index ~via_copper_size ~total_layers ()
   in
 
   let num_turns = int_of_float (Float.ceil turns) in
@@ -437,11 +455,10 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance 
 
   let transformation =
     if layer_index mod 2 = 1 then (
-      (* Mirror segments across the shorter dimension for odd layers *)
-      match shape with
-      | Round _ | Square _ -> mirror_x_axis
-      | Rectangular { width; height } | Oval { width; height; corner_radius = _ } ->
-        if width < height then mirror_y_axis else mirror_x_axis)
+      (* Mirror segments across the across dimension for odd layers *)
+      match pin_side with
+      | Left | Right -> mirror_x_axis
+      | Top | Bottom -> mirror_y_axis)
     else identity
   in
 
@@ -453,7 +470,7 @@ let generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance 
     last_point = Option.map (transform_point transformation) last_point;
   }
 
-let generate_spiral_segments ~shape ~pitch ~turns ~trace_width ~clearance ~layers ~via_copper_size =
+let generate_spiral_segments ~shape ~pin_side ~pitch ~turns ~trace_width ~clearance ~layers ~via_copper_size =
   List.init layers (fun layer_index ->
-    generate_spiral_segments_layer ~shape ~pitch ~turns ~trace_width ~clearance ~layer_index ~via_copper_size
+    generate_spiral_segments_layer ~shape ~pin_side ~pitch ~turns ~trace_width ~clearance ~layer_index ~via_copper_size
       ~total_layers:layers)
