@@ -399,14 +399,14 @@ let generate_oval_loop ?corner_radius ~width ~height ~pin_side ~turn_number ~pit
       (* Pins on left: main axis is horizontal (width) *)
       width, height, identity
     | Right ->
-      (* Pins on right: main axis is horizontal (width), but mirror horizontally *)
+      (* Pins on right: main axis is horizontal (width), mirror Y axis to flip left->right *)
       width, height, mirror_y_axis
     | Top ->
-      (* Pins on top: main axis is vertical (height), swap and mirror *)
-      height, width, compose_transform mirror_y_axis swap_xy
-    | Bottom ->
-      (* Pins on bottom: main axis is vertical (height), just swap *)
+      (* Pins on top: swap XY (left becomes top since Y points down) *)
       height, width, swap_xy
+    | Bottom ->
+      (* Pins on bottom: swap XY then mirror X axis to flip top->bottom *)
+      height, width, compose_transform mirror_x_axis swap_xy
   in
   let loop_result =
     generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch ~is_last ~trace_width ~clearance
