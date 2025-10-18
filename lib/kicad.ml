@@ -428,15 +428,12 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~total_l
   in
   let pad_size = trace_width *. 1000.0 in
 
-  (* Get first available first_point for outer pad *)
-  let first_point_opt = List.find_map (fun (layer_seg : Coil.layer_segments) -> layer_seg.first_point) segments in
-
-  (* Generate coil segments as footprint primitives (excluding first layer) *)
+  (* Generate coil segments as footprint primitives (including all layers) *)
   let width_mm = trace_width *. 1000.0 in
   let coil_primitives =
     List.concat_map
       (fun { Coil.layer_index; segments; _ } ->
-        if layer_index < keep_layers && layer_index > 0 then (
+        if layer_index < keep_layers then (
           let layer = assign_coil_layer layer_index total_layers keep_layers in
           List.map (fun segment -> segment_to_footprint_primitive rand_state width_mm layer segment) segments)
         else [])
@@ -455,24 +452,37 @@ let generate_footprint output_channel ~shape ~trace_width ~pitch ~turns ~total_l
   let coil_lines = List.rev coil_lines in
   let coil_arcs = List.rev coil_arcs in
 
-  (* Build footprint structure using helper functions *)
-  let outer_pads =
-    match first_point_opt with
-    | Some start_point ->
-      let outer_pad_pos = { x = start_point.x *. 1000.0; y = start_point.y *. 1000.0 } in
-      (* Extract first layer segments for pad1 primitives with proper offset *)
-      let first_layer_primitives =
-        match List.find_opt (fun { Coil.layer_index; _ } -> layer_index = 0) segments with
-        | Some { segments = first_segments; _ } ->
-          List.map (fun segment -> segment_to_primitive width_mm outer_pad_pos segment) first_segments
-        | None -> []
-      in
+  (* Helper function to create a round SMD pad at a specific point *)
+  let create_connection_pad number layer_index point_opt =
+    match point_opt with
+    | Some point ->
+      let layer_kicad = assign_coil_layer layer_index total_layers keep_layers in
       [
-        create_pad "1" `smd `custom ~at:(outer_pad_pos.x, outer_pad_pos.y) ~size:(pad_size, pad_size) ~layers:[ F_Cu ]
-          ~options:(Some { clearance = `outline; anchor = `circle })
-          ~primitives:first_layer_primitives ~uuid:(generate_uuid rand_state) ();
+        create_pad number `smd `circle
+          ~at:(point.x *. 1000.0, point.y *. 1000.0)
+          ~size:(pad_size, pad_size) ~layers:[ layer_kicad ] ~options:None ~primitives:[]
+          ~uuid:(generate_uuid rand_state) ();
       ]
     | None -> []
+  in
+
+  (* Get first and last points for outer pads *)
+  let first_layer = List.find_opt (fun { Coil.layer_index; _ } -> layer_index = 0) segments in
+  let last_layer = List.find_opt (fun { Coil.layer_index; _ } -> layer_index = keep_layers - 1) segments in
+
+  (* Build footprint structure using helper functions *)
+  let outer_pads =
+    let pad1 =
+      match first_layer with
+      | Some { first_point; _ } -> create_connection_pad "1" 0 first_point
+      | None -> []
+    in
+    let pad2 =
+      match last_layer with
+      | Some { last_point; _ } -> create_connection_pad "2" 0 last_point
+      | None -> []
+    in
+    pad1 @ pad2
   in
 
   (* Generate vias for layers with last_point coordinates (only for kept layers) *)
