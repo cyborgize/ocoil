@@ -222,31 +222,50 @@ let generate_oval_loop' ?corner_radius ~main_dim ~across_dim ~turn_number ~pitch
           -. sqrt (((prev_mid_arc_radius -. (pitch +. via_spacing)) ** 2.) -. (arc_center_y *. arc_center_y))
       in
       let arc_clearance = min 0. (current_half_across -. clearance -. trace_width) in
-      let arc_radius' = max 0. (mid_arc_radius +. arc_clearance) in
       let via_offset = calculate_via_offset ~layer_index ~via_copper_size ~trace_width ~clearance in
-      let line_start_x = line_start_x +. via_offset in
-      let arc_center_x = line_start_x +. arc_radius' in
+      let final_via_x = line_start_x +. via_offset in
       (* Compute points for tail segments *)
-      let optional_line_start = { x = line_start_x; y = current_half_across -. arc_radius' } in
-      let optional_line_end = { x = line_start_x; y = -.arc_clearance } in
       let line1_start = { x = straight_length; y = current_half_across } in
-      let line1_end = { x = arc_center_x; y = current_half_across } in
-      let arc_start = line1_end in
-      let arc_mid =
+      let line1_end = { x = -.mid_straight_length; y = current_half_across } in
+      (* First arc: from line1_end to the corner turn *)
+      let first_arc_start = line1_end in
+      let first_arc_center_y = current_half_across -. mid_arc_radius in
+      let first_arc_end = { x = -.mid_straight_length -. mid_arc_radius; y = first_arc_center_y } in
+      let first_arc_mid =
         {
-          x = arc_center_x -. (arc_radius' *. 0.5 *. sqrt 2.0);
-          y = current_half_across -. arc_radius' +. (arc_radius' *. 0.5 *. sqrt 2.0);
+          x = -.mid_straight_length -. (mid_arc_radius *. sqrt 2.0 /. 2.0);
+          y = first_arc_center_y +. (mid_arc_radius *. sqrt 2.0 /. 2.0);
         }
       in
-      let arc_end = { x = line_start_x; y = current_half_across -. arc_radius' } in
+      (* Vertical line down from first arc *)
+      let vert_line_start = first_arc_end in
+      (* Calculate where vertical line should end so arc has equal horizontal and vertical extent *)
+      let final_arc_horizontal_extent = final_via_x -. (-.mid_straight_length -. mid_arc_radius) in
+      let final_arc_vertical_extent = final_arc_horizontal_extent in
+      let vert_line_end =
+        { x = -.mid_straight_length -. mid_arc_radius; y = -.arc_clearance +. final_arc_vertical_extent }
+      in
+      (* Final arc: from vertical line to via endpoint with radius calculated from extent *)
+      let final_arc_radius = final_arc_horizontal_extent in
+      let final_arc_start = vert_line_end in
+      let final_arc_end = { x = final_via_x; y = -.arc_clearance } in
+      let final_arc_center_x = final_via_x in
+      let final_arc_center_y = -.arc_clearance +. final_arc_vertical_extent in
+      let final_arc_mid =
+        {
+          x = final_arc_center_x -. (final_arc_radius *. 0.5 *. sqrt 2.0);
+          y = final_arc_center_y -. (final_arc_radius *. 0.5 *. sqrt 2.0);
+        }
+      in
       let segments =
         [
           make_line ~start:line1_start ~end_:line1_end;
-          make_arc ~start:arc_start ~mid:arc_mid ~end_:arc_end ~radius:arc_radius';
-          make_line ~start:optional_line_start ~end_:optional_line_end;
+          make_arc ~start:first_arc_start ~mid:first_arc_mid ~end_:first_arc_end ~radius:mid_arc_radius;
+          make_line ~start:vert_line_start ~end_:vert_line_end;
+          make_arc ~start:final_arc_start ~mid:final_arc_mid ~end_:final_arc_end ~radius:final_arc_radius;
         ]
       in
-      let last_point = Some { x = line_start_x; y = 0.0 } in
+      let last_point = Some { x = final_via_x; y = 0.0 } in
       segments, last_point
     | false ->
       let line_start = { x = straight_length; y = current_half_across } in
